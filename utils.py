@@ -17,6 +17,11 @@ def sign_data(private_key: str, data: dict, _time: str):
     return signature
 
 
+def validate_signature(signature, data, _time):
+    to_sig_str = build_to_sig_str(data, _time)
+    return valide_ECDSA_sign(data["from"], signature, to_sig_str)
+
+
 def build_to_sig_str(data, _time):
     values = [str(data[k]) for k in sorted(data.keys())]
     sig_str = f"{''.join(values)}{_time}"
@@ -33,9 +38,12 @@ def valide_ECDSA_sign(public_key: str, sign: str, to_sig_str):
         return False
 
 
-def validate_signature(signature, data, _time):
-    to_sig_str = build_to_sig_str(data, _time)
-    return valide_ECDSA_sign(data["from"], signature, to_sig_str)
+def generate_ECDSA_keys():
+    sk = ecdsa.SigningKey.generate(curve=CURVE)  # this is your sign (private key)
+    vk = sk.get_verifying_key()  # this is your verification key (public key)
+    public_key = base64.b64encode(vk.to_string()).decode()
+    private_key = sk.to_string().hex()
+    return public_key, private_key
 
 
 if __name__ == '__main__':

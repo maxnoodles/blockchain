@@ -5,7 +5,6 @@ import click
 import requests
 
 from utils import time_format, sign_data
-from generate import generate_ECDSA_keys
 
 
 def send_transaction(from_address, to_address, memo, private_key, port=8080):
@@ -30,9 +29,6 @@ def send_transaction(from_address, to_address, memo, private_key, port=8080):
 
 
 @click.command()
-# @click.option('--count', default=1, help='Number of greetings.')
-# @click.option('--name', prompt='Your name',
-#               help='The person to greet.')
 @click.option('-port', help='port')
 @click.option('-fa', help='from address')
 @click.option('-ta', help='to address')
