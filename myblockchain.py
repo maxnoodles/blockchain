@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+from collections import defaultdict
 from pprint import pprint, pformat
 from time import time
 
@@ -20,6 +21,7 @@ class BlockChain:
         self.chain = []
         self.nodes = set()
         self.market_trees = []
+        self.UTXO = defaultdict(dict)
 
     def init_block(self):
         return {
@@ -44,8 +46,6 @@ class BlockChain:
     def new_block(self):
         """
         创建一个新区块加入到区块链中
-        :param hash_val: 工作量证明的哈希值
-        :param proof: 工作量证明的随机数
         :return: 一个新区块
         """
         block = self.init_block()
@@ -71,7 +71,7 @@ class BlockChain:
         """
         简单的工作量证明算法
         找到一个数，使得区块的hash前4位为0
-        :param block:
+        :param block: 区块
         :return:
         """
         block_cp = copy.deepcopy(block)
@@ -110,45 +110,121 @@ class BlockChain:
         guess_hash = hashlib.sha256(guess).hexdigest()
         return guess_hash[:4] == "0000", guess_hash
 
-    def new_transaction(self, s_addr: str, r_addr: str, amount: float, nlock_time=None):
+    @property
+    def height(self):
+        return len(self.chain)
+
+    @staticmethod
+    def build_vin(txid_in_list: list[tuple[str, int]]):
+        """
+        构建交易输入
+        :param txid_in_list: [(txid, vout)]
+        :return:
+        """
+        vin = []
+        for txid, out in txid_in_list:
+            vin.append({
+                "txid": txid,
+                "vout": out,
+            })
+        return vin
+
+    @staticmethod
+    def build_vout(out_list: list[dict[str, any]]):
+        """
+        构建交易输出
+        :param out_list:
+             [
+                {
+                    "addr": 哈希地址
+                    "value": 数量
+                    “script_type”: 脚本类型
+                }
+            ]
+        :return:
+        """
+        vout = []
+        for out_dict in out_list:
+            addr, value, script_type = out_dict["addr"], out_dict["value"], out_dict["script_type"]
+            assert script_type in ["P2PK", "P2PKH", "P2SH"]
+            out = {"script_type": script_type, "value": value}
+            match script_type:
+                case "P2PK":
+                    # <PubKey> OP_CHECKSIG
+                    out["script_pubkey"] = f"{addr} OP_CHECKSIG"
+                case "P2PKH":
+                    # OP_DUP OP_HASH <PubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+                    out["script_pubkey"] = f"OP_DUP OP_HASH {addr} OP_EQUALVERIFY OP_CHECKSIG"
+                case "P2SH":
+                    # OP_HASH <PubKeyHash> OP_CHECKSIG
+                    out["script_hash"] = f"OP_HASH {addr} OP_EQUAL"
+            vout.append(out)
+        return vout
+
+    def new_transaction(self, txid_in_list: list[tuple[str, int]], out_list: list[dict[str, any]], nlock_time=None):
 
         """
         创建一个新的交易，添加到我创建的下一个区块中
-        :param s_addr: 发送者地址，发送数字币的地址
-        :param r_addr: 接受者地址，接受数字币的地址
-        :param amount: 数字币数量
+        :param txid_in_list: 输入数组
+        :param out_list: 输出数组
         :param nlock_time: 交易级别的时间
         :return: 记录本次交易的区块索引
         """
 
-        if nlock_time and nlock_time < time():
-            raise ValueError(f"nlock_time 需要大于当前时间")
+        vin_list = self.build_vin(txid_in_list)
+        vout_list = self.build_vout(out_list)
 
-        money = 0
-        if s_addr != '0':
-            # 判断发送者是否有足够多的数字货币用于交易
-            # todo 后续替换为检测 UTXO
-            for block in self.chain:
-                for transactions in block['transactions']:
-                    if transactions['s_addr'] == s_addr:
-                        money -= transactions['amount']
-                    if transactions['r_addr'] == s_addr:
-                        money += transactions['amount']
+        # 小于 5 亿，解释成区块高度, 大于 5 亿为时间戳
+        if nlock_time:
+            if nlock_time < 500000000:
+                if self.height < nlock_time:
+                    raise ValueError(f"nlock_time 再指定的区块高度之前无效")
+            else:
+                if nlock_time < time():
+                    raise ValueError(f"nlock_time 需要大于当前时间")
 
-            if money < amount:
-                raise ValueError(f"余额不足")
+        in_value_sum = 0
+        for vin in vin_list:
+            txid, out = vin["txid"], vin["out"]
+            if txid == '0':
+                continue
+            if txid not in self.UTXO:
+                raise ValueError(f"txid {txid} 无效")
+            if out not in self.UTXO[txid]:
+                raise ValueError(f"txid {txid} 使用的 vout {out} 无效")
+            in_value_sum += self.UTXO[txid][out]["value"]
 
-        # 交易账本，可包含多个交易
+        out_value_sum = sum([i["value"] for i in out_list])
+        if in_value_sum < out_value_sum:
+            raise ValueError("输入金额小于输出金额")
 
         trans = {
-            's_addr': s_addr,
-            'r_addr': r_addr,
-            'amount': amount,
+            "vin": vin_list,
+            "vout": vout_list,
             "nlock_time": nlock_time or len(self.chain),
         }
-        trans["txid"] = self.hash(trans)
-
+        # todo 自动找零
+        txid = self.hash(trans)
+        trans["txid"] = txid
         self.current_transactions.append(trans)
+        self.adjust_UTXO(vin_list, vout_list, txid)
+
+    def adjust_UTXO(self, vin_list, vout_list, txid):
+        """
+        调整 UTXO
+        :param vin_list: 交易输入
+        :param vout_list: 交易输出
+        :param txid: 新生成的交易 id
+        :return:
+        """
+
+        # UTXO 中删除 vin
+        for vin in vin_list:
+            in_txid, out = vin["txid"], vin["out"]
+            self.UTXO[in_txid].pop(out)
+        # UTXO 中增加 vout
+        for idx, vout in enumerate(vout_list):
+            self.UTXO[txid][idx] = vout
 
     def register_node(self, port):
         """
@@ -162,7 +238,7 @@ class BlockChain:
         检验区块链是否是合法的
         1.检查区块链是否连续
         2.检查工作量证明是否正常
-        :param chain: 一份区块链
+        :param chain: 区块链
         """
         i = 1
         while i < len(chain):
@@ -173,9 +249,9 @@ class BlockChain:
             i += 1
         return True
 
-    def resolve_conflicts(self):
+    def resolve_conflicts(self) -> bool:
         """
-        共识算法，确保区块链网络中每个网络节点存储的区块链都是一致的，通过长区块链替换短区块链实现
+        确保区块链网络中每个网络节点存储的区块链都是一致的，通过长区块链替换短区块链实现
         :return: True 替换 False不替换
         """
         new_chain = None
@@ -209,6 +285,6 @@ class BlockChain:
 
 if __name__ == "__main__":
     chain = BlockChain()
-    chain.new_transaction("0", "b", 10)
+    # chain.new_transaction("0", "b", 10)
     chain.new_block()
     print(chain)

@@ -113,9 +113,13 @@ def consensus():
 
 
 def timing_sync():
+    """
+    定时同步
+    :return:
+    """
     while True:
+        time.sleep(5)
         print("开始同步")
-        time.sleep(1)
         blockchain.resolve_conflicts()
 
 
@@ -127,7 +131,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     port = args.port
 
-    # 启动定时同步
     with ThreadPoolExecutor(max_workers=2) as executor:
         executor.submit(timing_sync)
         executor.submit(app.run, host='localhost', port=port)
