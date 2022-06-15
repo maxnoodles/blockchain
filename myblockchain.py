@@ -18,13 +18,14 @@ def hash_block(block):
 
 
 class BlockChain:
-    def __init__(self):
+    def __init__(self, host=None):
         self.current_transactions = []
         self.chain = []
-        self.nodes = set()
         self.market_trees = []
         self.UTXO = defaultdict(dict)
         self.full_node = "127.0.0.1:5000"
+        self.host = host
+        self.other_nodes = set()
 
     def init_block(self):
         return {
@@ -214,9 +215,19 @@ class BlockChain:
 
         self.current_transactions.append(trans)
         self.adjust_UTXO(vin_list, vout_list, txid)
-        # todo 广播到其他节点
+        # 广播到其他节点
+        self.flood_trans(txid_in_list, out_list)
 
-
+    def flood_trans(self, txid_in_list, out_list):
+        for node in self.other_nodes:
+            try:
+                data = {
+                    "txid_in_list": txid_in_list,
+                    "out_list": out_list
+                }
+                requests.post(f'http://{node}/transactions/new', json=data, timeout=5)
+            except:
+                pass
 
     def adjust_UTXO(self, vin_list, vout_list, txid):
         """
@@ -241,7 +252,7 @@ class BlockChain:
         添加新的节点进入区块链网络，本地运行只需要端口
         :param url: url
         """
-        self.nodes.add(url)
+        self.other_nodes.add(url)
 
     def valid_chain(self, chain) -> bool:
         """
@@ -268,7 +279,7 @@ class BlockChain:
         # 本地区块链的长度
         local_len = len(self.chain)
 
-        for node in self.nodes:
+        for node in self.other_nodes:
             # 访问节点的一个接口，拿到该接口的区块链长度和区块链本身
             try:
                 response = requests.get(f'http://{node}/chain')
@@ -308,12 +319,12 @@ class BlockChain:
         定时同步
         :return:
         """
-        # while True:
-            # time.sleep(30)
-        with open(FILE_PATH, "w") as f:
-            for block in self.chain:
-                txt = json.dumps(block, sort_keys=True)
-                f.write(f"{txt}\n")
+        while True:
+            time.sleep(30)
+            with open(FILE_PATH, "w") as f:
+                for block in self.chain:
+                    txt = json.dumps(block, sort_keys=True)
+                    f.write(f"{txt}\n")
 
     def reload_by_file(self):
         with open(FILE_PATH, 'r') as f:
@@ -329,7 +340,7 @@ class BlockChain:
             if response.status_code == 200:
                 resp_dict = response.json()
                 total_nodes = resp_dict["total_nodes"]
-                self.nodes.add(*total_nodes)
+                self.other_nodes.add(*total_nodes)
         except:
             # 节点没开机
             pass

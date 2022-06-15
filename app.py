@@ -12,7 +12,6 @@ app = Flask(__name__)
 # TODO 矿工地址
 node_identifier = str(uuid4()).replace('-', '')
 # 实例化区块链
-blockchain = BlockChain()
 
 
 @app.route('/mine', methods=['GET'])
@@ -92,7 +91,7 @@ def register_nodes():
 
     response = {
         'message': '新节点加入区块链网络',
-        'total_nodes': list(blockchain.nodes),
+        'total_nodes': list(blockchain.host + blockchain.other_nodes),
     }
     return jsonify(response), 200
 
@@ -122,7 +121,7 @@ if __name__ == '__main__':
     port = args.port
 
     host = '127.0.0.1'
-    blockchain.nodes.add(f"{host}:{port}")
+    blockchain = BlockChain(host)
     with ThreadPoolExecutor(max_workers=3) as executor:
         executor.submit(blockchain.file_sync)
         executor.submit(blockchain.timing_sync)
