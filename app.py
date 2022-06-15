@@ -1,3 +1,4 @@
+import json
 import time
 from uuid import uuid4
 
@@ -8,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
 
-# 通过uuid4()基于伪随机数生成区块链网络唯一的ID
+# TODO 矿工地址
 node_identifier = str(uuid4()).replace('-', '')
 # 实例化区块链
 blockchain = BlockChain()
@@ -21,7 +22,7 @@ def mine():
     :return:
     '''
     if not blockchain.chain:
-        blockchain.new_transaction('0', node_identifier, amount=50)
+        blockchain.new_transaction([('0', 0)], [(node_identifier, "P2PK", 50)])
         block = blockchain.new_block()
         response = {
             'message': '创世区块建立',
@@ -34,7 +35,7 @@ def mine():
         return jsonify(response), 200
 
     # 挖矿获得一个数字货币奖励，将奖励的交易记录添加到账本中，其他的交易记录通过new_transaction接口添加
-    blockchain.new_transaction('0', node_identifier, amount=6)
+    blockchain.new_transaction([('0', 0)], [(node_identifier, "P2PK", 50)])
     block = blockchain.new_block()
 
     response = {
@@ -56,14 +57,14 @@ def new_transaction():
     '''
     values = request.get_json()
 
-    required = ['sender', 'recipient', 'amount']
+    required = ['txid_in_list', 'out_list']
     if not all(k in values for k in required):
         return '缺失必要字段', 400
 
-    blockchain.new_transaction(values['sender'], values['recipient'], values['amount'])
+    blockchain.new_transaction(values['txid_in_list'], values['out_list'])
 
-    response = {'message': f'交易账本被添加到新的区块中{len(blockchain)}'}
-    return jsonify(response), 201
+    response = {'message': f'交易账本被添加到新的区块中{len(blockchain.chain)}'}
+    return jsonify(response), 200
 
 
 @app.route('/chain', methods=['GET'])
@@ -93,7 +94,7 @@ def register_nodes():
         'message': '新节点加入区块链网络',
         'total_nodes': list(blockchain.nodes),
     }
-    return jsonify(response), 201
+    return jsonify(response), 200
 
 
 @app.route('/node/resolve', methods=['GET'])
@@ -112,17 +113,6 @@ def consensus():
     return jsonify(response), 200
 
 
-def timing_sync():
-    """
-    定时同步
-    :return:
-    """
-    while True:
-        time.sleep(5)
-        print("开始同步")
-        blockchain.resolve_conflicts()
-
-
 if __name__ == '__main__':
     from argparse import ArgumentParser
 
@@ -131,7 +121,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
     port = args.port
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        executor.submit(timing_sync)
+    host = '127.0.0.1'
+    blockchain.nodes.add(f"{host}:{port}")
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        executor.submit(blockchain.file_sync)
+        executor.submit(blockchain.timing_sync)
         executor.submit(app.run, host='localhost', port=port)
 

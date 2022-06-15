@@ -2,12 +2,14 @@ import copy
 import hashlib
 import json
 from collections import defaultdict
-from pprint import pprint, pformat
-from time import time
+from pprint import pformat
+import time
 
 import requests
 
 from market import MerkleTools
+
+FILE_PATH = 'block.txt'
 
 
 def hash_block(block):
@@ -22,13 +24,14 @@ class BlockChain:
         self.nodes = set()
         self.market_trees = []
         self.UTXO = defaultdict(dict)
+        self.full_node = "127.0.0.1:5000"
 
     def init_block(self):
         return {
             # 高度
             "height": len(self.chain),
             # 时间戳
-            "timestamp": time(),
+            "timestamp": time.time(),
             # 上一区块的 hash
             'previous_hash': self.last_block["index"] if self.chain else None,
             # 默克尔树根
@@ -130,22 +133,16 @@ class BlockChain:
         return vin
 
     @staticmethod
-    def build_vout(out_list: list[dict[str, any]]):
+    def build_vout(out_list: list[tuple[str, str, float]]):
         """
         构建交易输出
         :param out_list:
-             [
-                {
-                    "addr": 哈希地址
-                    "value": 数量
-                    “script_type”: 脚本类型
-                }
-            ]
+             [(哈希地址, 数量, 脚本类型)]
         :return:
         """
         vout = []
-        for out_dict in out_list:
-            addr, value, script_type = out_dict["addr"], out_dict["value"], out_dict["script_type"]
+        for out_tuple in out_list:
+            addr, script_type, value = out_tuple
             assert script_type in ["P2PK", "P2PKH", "P2SH"]
             out = {"script_type": script_type, "value": value}
             match script_type:
@@ -161,7 +158,7 @@ class BlockChain:
             vout.append(out)
         return vout
 
-    def new_transaction(self, txid_in_list: list[tuple[str, int]], out_list: list[dict[str, any]], nlock_time=None):
+    def new_transaction(self, txid_in_list: list[tuple[str, int]], out_list: list[tuple[str, str, float]], nlock_time=None):
 
         """
         创建一个新的交易，添加到我创建的下一个区块中
@@ -180,23 +177,28 @@ class BlockChain:
                 if self.height < nlock_time:
                     raise ValueError(f"nlock_time 再指定的区块高度之前无效")
             else:
-                if nlock_time < time():
+                if nlock_time < time.time():
                     raise ValueError(f"nlock_time 需要大于当前时间")
 
         in_value_sum = 0
-        for vin in vin_list:
-            txid, out = vin["txid"], vin["out"]
-            if txid == '0':
-                continue
-            if txid not in self.UTXO:
-                raise ValueError(f"txid {txid} 无效")
-            if out not in self.UTXO[txid]:
-                raise ValueError(f"txid {txid} 使用的 vout {out} 无效")
-            in_value_sum += self.UTXO[txid][out]["value"]
 
-        out_value_sum = sum([i["value"] for i in out_list])
-        if in_value_sum < out_value_sum:
-            raise ValueError("输入金额小于输出金额")
+        if len(vin_list) != 1 or vin_list[0]["txid"] == "0":
+            # 创币交易，跳过
+            pass
+        else:
+            for vin in vin_list:
+                txid, out = vin["txid"], vin["vout"]
+                if txid == '0':
+                    continue
+                if txid not in self.UTXO:
+                    raise ValueError(f"txid {txid} 无效")
+                if out not in self.UTXO[txid]:
+                    raise ValueError(f"txid {txid} 使用的 vout {out} 无效")
+                in_value_sum += self.UTXO[txid][out]["value"]
+
+            out_value_sum = sum([i["value"] for i in vout_list])
+            if in_value_sum < out_value_sum:
+                raise ValueError("输入金额小于输出金额")
 
         trans = {
             "vin": vin_list,
@@ -206,8 +208,15 @@ class BlockChain:
         # todo 自动找零
         txid = self.hash(trans)
         trans["txid"] = txid
+
+        if txid in self.UTXO:
+            raise ValueError("此交易已经被保存在区块中")
+
         self.current_transactions.append(trans)
         self.adjust_UTXO(vin_list, vout_list, txid)
+        # todo 广播到其他节点
+
+
 
     def adjust_UTXO(self, vin_list, vout_list, txid):
         """
@@ -220,18 +229,19 @@ class BlockChain:
 
         # UTXO 中删除 vin
         for vin in vin_list:
-            in_txid, out = vin["txid"], vin["out"]
-            self.UTXO[in_txid].pop(out)
+            in_txid, out = vin["txid"], vin["vout"]
+            if in_txid != '0':
+                self.UTXO[in_txid].pop(out)
         # UTXO 中增加 vout
         for idx, vout in enumerate(vout_list):
             self.UTXO[txid][idx] = vout
 
-    def register_node(self, port):
+    def register_node(self, url):
         """
         添加新的节点进入区块链网络，本地运行只需要端口
-        :param port: 新节点的端口
+        :param url: url
         """
-        self.nodes.add(port)
+        self.nodes.add(url)
 
     def valid_chain(self, chain) -> bool:
         """
@@ -263,8 +273,9 @@ class BlockChain:
             try:
                 response = requests.get(f'http://{node}/chain')
                 if response.status_code == 200:
-                    length = response.json()['length']
-                    chain = response.json()['chain']
+                    resp_dict = response.json()
+                    length = resp_dict['length']
+                    chain = resp_dict['chain']
 
                     # 判断邻居节点发送过来的区块链长度是否最长且是否合法
                     if length > local_len and self.valid_chain(chain):
@@ -282,9 +293,56 @@ class BlockChain:
     def __str__(self):
         return pformat(chain.chain)
 
+    def timing_sync(self):
+        """
+        定时同步
+        :return:
+        """
+        while True:
+            time.sleep(5)
+            print("开始同步节点")
+            self.resolve_conflicts()
+
+    def file_sync(self):
+        """
+        定时同步
+        :return:
+        """
+        # while True:
+            # time.sleep(30)
+        with open(FILE_PATH, "w") as f:
+            for block in self.chain:
+                txt = json.dumps(block, sort_keys=True)
+                f.write(f"{txt}\n")
+
+    def reload_by_file(self):
+        with open(FILE_PATH, 'r') as f:
+            for row in f.readlines():
+                block = json.loads(row)
+                self.chain.append(block)
+
+    def init_nodes(self, host):
+        if host == self.full_node:
+            return
+        try:
+            response = requests.get(f'http://{self.full_node}/nodes/register', timeout=5)
+            if response.status_code == 200:
+                resp_dict = response.json()
+                total_nodes = resp_dict["total_nodes"]
+                self.nodes.add(*total_nodes)
+        except:
+            # 节点没开机
+            pass
+
 
 if __name__ == "__main__":
     chain = BlockChain()
-    # chain.new_transaction("0", "b", 10)
-    chain.new_block()
+    chain.reload_by_file()
+    # in_list = [("0",)]
+    # _in = [("0", 0)]
+    # _out = [("6e571da347b66acfb7109629be894c06d8294482b4da701398405fe292c78474", "P2PK", 50)]
+    # for i in range(5):
+    #     chain.new_transaction(_in, _out)
+    #     chain.new_block()
+    # chain.file_sync()
     print(chain)

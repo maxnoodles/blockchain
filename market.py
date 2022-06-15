@@ -130,15 +130,9 @@ if __name__ == '__main__':
     proof_1 = mt.get_proof(1)
     print(proof_1)
 
-    proof = [{'left': '05ae04314577b2783b4be98211d1b72476c59e9c413cfb2afa2f0c68e0d93911'}, {'right': '1ba2ebb275e86668d38ccdfbb7a6e009e90b89b97a90a06ed257f2b19ce49b66'}]
-
     target_hash = 'a7669b9bd589d1d4a1d122c0b2209d15747bfbea01663139b524b26e97afe183'
-    merkle_root = '6e571da347b66acfb7109629be894c06d8294482b4da701398405fe292c78474'
 
-    is_valid = mt.validate_proof(proof, target_hash, merkle_root)
-    print(is_valid)
-
-    print(mt.validate_proof(mt.get_proof(1), mt.get_leaf(1), mt.get_merkle_root()))  # True
+    print(mt.validate_proof(proof_1, leaf_value, root_value))  # True
 
     # proof = [
     #     {right: '09096dbc49b7909917e13b795ebf289ace50b870440f10424af8845fb7761ea5'},
