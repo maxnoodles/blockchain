@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import json
+from copy import deepcopy
 from datetime import datetime
 
 import ecdsa
@@ -8,8 +9,10 @@ import ecdsa
 CURVE = ecdsa.SECP256k1
 
 
-def validate_script(redeem_script, out_data, un_script=None):
-    match out_data.get("script_type"):
+def validate_script(lock_script, script_type, in_data, redeem_script=None):
+    tmp_data = deepcopy(in_data)
+    unlock_script = tmp_data.pop("sig")
+    match script_type:
         case "P2SH":
             """
                两个脚本经由两步实现组合。 首先，将 unlock_script 与 lock_script 比对以确认其与哈希是否匹配
@@ -17,18 +20,16 @@ def validate_script(redeem_script, out_data, un_script=None):
                假如兑换脚本哈希匹配，解锁脚本自行执行以解锁兑换脚本
                <Sig1> <Sig2> 2 PK1 PK2 PK3 3 CHECKMULTISIG
             """
-            lock_script = out_data.pop('script_hash').lstrip("OP_HASH")
+            lock_script = lock_script.lstrip("OP_HASH")
             redeem_hash = hash_256(redeem_script)
-            return eval_script(f"{redeem_hash} {lock_script} {un_script}", out_data)
-        case "P2PKH":
-            lock_script = out_data.pop('script_pubkey')
-            return eval_script(f"{redeem_script} {lock_script}", out_data)
-        case "P2PK":
-            return True
+            return eval_script(f"{redeem_hash} {lock_script} {unlock_script}", tmp_data)
+        case "P2PKH" | "P2PK":
+            # OP_DUP OP_HASH160 ab68025513c3dbd2f7b92a94e0581f5d50f654e7 OP_EQUALVERIFY OP_CHECKSIG
+            return eval_script(f"{unlock_script} {lock_script}", tmp_data)
     return False
 
 
-def eval_script(script, out_data):
+def eval_script(script, data):
     stack = []
     tax_list = script.strip().split()
     for tax in tax_list:
@@ -48,7 +49,7 @@ def eval_script(script, out_data):
                 # <sig> <pubk> OP_CHECKSIG
                 pubk = stack.pop()
                 sig = stack.pop()
-                if not validate_signature(pubk, sig, out_data):
+                if not validate_signature(pubk, sig, data):
                     return False
             case "OP_CHECKMULTISIG":
                 # 检测多重签名
@@ -57,7 +58,7 @@ def eval_script(script, out_data):
                 pk_lists = [stack.pop() for _ in range(int(pk_nums))]
                 sig_nums = stack.pop()
                 sig_lists = [stack.pop() for _ in range(int(sig_nums))]
-                if not validate_multi_sign(pk_lists, sig_lists, out_data):
+                if not validate_multi_sign(pk_lists, sig_lists, data):
                     return False
             case str() as s:
                 stack.append(s)
@@ -84,9 +85,22 @@ def hash_256(s):
     return hashlib.sha256(s.encode()).hexdigest()
 
 
-def sign_data(private_key: str, data: dict):
+def build_sig(txid, out, sk_list, pk_str):
+    vin = build_simple_vin(txid, out)
+    sig_str = ' '.join((sign_data(sk, vin) for sk in sk_list))
+    return f"{sig_str} {pk_str}"
+
+
+def build_simple_vin(txid, vout):
+    return {
+        "txid": txid,
+        "vout": vout
+    }
+
+
+def sign_data(secret_key: str, data: dict):
     sig_byte = build_to_sig_byte(data)
-    sk = ecdsa.SigningKey.from_string(bytes.fromhex(private_key), curve=CURVE)
+    sk = ecdsa.SigningKey.from_string(bytes.fromhex(secret_key), curve=CURVE)
     signature = base64.b64encode(sk.sign(sig_byte)).hex()
     return signature
 
@@ -114,8 +128,8 @@ def generate_ecdsa_keys():
     sk = ecdsa.SigningKey.generate(curve=CURVE)  # this is your sign (private key)
     vk = sk.get_verifying_key()  # this is your verification key (public key)
     public_key = base64.b64encode(vk.to_string()).decode()
-    private_key = sk.to_string().hex()
-    return public_key, private_key
+    secret_key = sk.to_string().hex()
+    return public_key, secret_key
 
 
 if __name__ == '__main__':
@@ -139,17 +153,11 @@ if __name__ == '__main__':
     # ret = validate_script(un_script, data)
     # print(ret)
 
-    p2sh_data = {
-        "from": from_address,
-        "to": to_address,
-        "memo": "123",
-        "script_type": "P2SH",
-    }
+    test_data = build_simple_vin("123", 1)
 
     red_script = f'2 {one[0]} {two[0]} {from_address} 3 OP_CHECKMULTISIG'
-    unlock_script = f'{sign_data(one[1], p2sh_data)} {sign_data(two[1], p2sh_data)} {red_script}'
+    test_data["sig"] = build_sig("123", 1, [one[1], two[1]], red_script)
+    lock_script = f"OP_HASH {hash_256(red_script)} OP_EQUALVERIFY"
 
-    p2sh_data["script_hash"] = f"OP_HASH {hash_256(red_script)} OP_EQUALVERIFY"
-
-    ret = validate_script(red_script, p2sh_data, unlock_script)
+    ret = validate_script(lock_script, "P2SH", test_data, red_script)
     print(ret)

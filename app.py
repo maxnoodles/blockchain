@@ -91,7 +91,15 @@ def register_nodes():
 
     response = {
         'message': '新节点加入区块链网络',
-        'total_nodes': list(blockchain.host + blockchain.other_nodes),
+        'total_nodes': list(blockchain.nodes),
+    }
+    return jsonify(response), 200
+
+
+@app.route('/nodes', methods=['GET'])
+def nodes():
+    response = {
+        'nodes': list(blockchain.nodes),
     }
     return jsonify(response), 200
 
@@ -102,7 +110,7 @@ def consensus():
     if replaced:
         response = {
             'message': '本节点区块链被替换',
-            'new_chain': blockchain.chain
+            'new_cha n': blockchain.chain
         }
     else:
         response = {
@@ -120,8 +128,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
     port = args.port
 
-    host = '127.0.0.1'
+    host = f'{"127.0.0.1"}:{port}'
     blockchain = BlockChain(host)
+    blockchain.reload_by_file()
+    blockchain.init_nodes(host)
+
+    print(blockchain.nodes)
     with ThreadPoolExecutor(max_workers=3) as executor:
         executor.submit(blockchain.file_sync)
         executor.submit(blockchain.timing_sync)
