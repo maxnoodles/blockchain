@@ -1,6 +1,0 @@
-# curl -i http://httpbin.org/ip
-GET http://localhost:7000/chain
-
-###
-GET http://localhost:7000/nodes
-

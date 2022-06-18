@@ -37,8 +37,6 @@ def send_transaction(from_address, to_address, memo, private_key, port=8080):
 def client(port, fa, ta, memo, pk):
     if all([fa, ta, memo, pk]):
         print(send_transaction(fa, ta, memo, pk, port))
-    else:
-        print()
 
 
 if __name__ == '__main__':

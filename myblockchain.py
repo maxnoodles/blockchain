@@ -330,7 +330,7 @@ class BlockChain:
         """
         while True:
             time.sleep(5)
-            print("开始同步其他节点区块链")
+            print(f"开始同步其他节点区块链 {self.nodes}")
             self.resolve_conflicts()
             print(self.chain)
 
@@ -369,7 +369,6 @@ class BlockChain:
             if response.status_code == 200:
                 resp_dict = response.json()
                 total_nodes = resp_dict["total_nodes"]
-                print(total_nodes)
                 self.nodes.update(total_nodes)
         except Exception as e:
             logging.exception(e)

@@ -1,17 +1,16 @@
 import json
-import time
 from uuid import uuid4
 
 from flask import jsonify, request, Flask
 
 from myblockchain import BlockChain
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+from utils import generate_ecdsa_keys
 
 app = Flask(__name__)
-
-# TODO 矿工地址
-node_identifier = str(uuid4()).replace('-', '')
-# 实例化区块链
+NODE_ADDRESS_PATH = 'host_address.txt'
 
 
 @app.route('/mine', methods=['GET'])
@@ -21,7 +20,7 @@ def mine():
     :return:
     '''
     if not blockchain.chain:
-        blockchain.new_transaction([('0', 0)], [(node_identifier, "P2PK", 50)])
+        blockchain.new_transaction([('0', 0)], [(host_address, 50, "P2PK")])
         block = blockchain.new_block()
         response = {
             'message': '创世区块建立',
@@ -34,7 +33,7 @@ def mine():
         return jsonify(response), 200
 
     # 挖矿获得一个数字货币奖励，将奖励的交易记录添加到账本中，其他的交易记录通过new_transaction接口添加
-    blockchain.new_transaction([('0', 0)], [(node_identifier, "P2PK", 50)])
+    blockchain.new_transaction([('0', 0)], [(host_address, 50, "P2PK")])
     block = blockchain.new_block()
 
     response = {
@@ -120,6 +119,21 @@ def consensus():
     return jsonify(response), 200
 
 
+def get_host_address(host):
+    p = Path(NODE_ADDRESS_PATH)
+    addr_map = {}
+    if not p.exists():
+        p.touch()
+    else:
+        with p.open("r") as f:
+            addr_map = json.loads(f.read())
+    if host not in addr_map:
+        addr_map[host] = generate_ecdsa_keys()
+        with p.open("w") as f:
+            f.write(json.dumps(addr_map))
+    return addr_map
+        
+
 if __name__ == '__main__':
     from argparse import ArgumentParser
 
@@ -132,9 +146,11 @@ if __name__ == '__main__':
     blockchain = BlockChain(host)
     blockchain.reload_by_file()
     blockchain.init_nodes(host)
+    
+    host_address_map = get_host_address(host)
+    host_address = host_address_map[host][0]
 
-    print(blockchain.nodes)
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=3,) as executor:
         executor.submit(blockchain.file_sync)
         executor.submit(blockchain.timing_sync)
         executor.submit(app.run, host='localhost', port=port)
