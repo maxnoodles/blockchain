@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>address</title>
+</head>
+<body>
+
+
+    <div class="">
+      <h4>哈希地址: {{data["address"]}} </h4>
+      <h4>公钥: {{data["pk"]}} </h4>
+      <h4>私钥: {{data["sk"]}} </h4>
+      <h4>utxo余额: {{data["balance"]}} </h4>
+      <h4>utxo数量: {{data["utxo_logs"]|length}} 条</h4>
+      {% for utxo in data["utxo_logs"] %}
+        <p>utxo: {{utxo}}</p>
+      {% endfor %}
+      <h4>花费交易: {{data["in_logs"]|length}} 条</h4>
+      {% for logs in data["in_logs"] %}
+        <p>utxo: {{logs}}</p>
+      {% endfor %}
+      <h4>收到交易: {{data["out_logs"]|length}} 条</h4>
+      {% for logs in data["out_logs"] %}
+        <p>utxo: {{logs}}</p>
+      {% endfor %}
+    </div>
+
+
+</body>
+</html>

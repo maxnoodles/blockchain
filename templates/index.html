@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+    <meta charset="utf-8">
+    <title>blockchain</title>
+  </head>
+  <body>
+    <a href="/chain">all blocks </a> <br>
+    <a href="/chain/last">last block </a> <br>
+    <a href="/nodes">nodes </a> <br> <br>
+
+
+    <form class="" action="/gen_sig" method="post">
+      <label><input type="text" name="pk" placeholder="pk" value=""></label><br>
+      <label><input type="text" name="sk" placeholder="sk" value=""></label><br>
+      <label><input type="text" name="txid" placeholder="txid" value=""></label><br>
+      <label><input type="text" name="vout" placeholder="vout" value=""></label>
+      <input type="submit" name="" value="生成签名">
+    </form>
+
+    <div>
+      <h4>引用 txid: {{txid}}</h4>
+      <h4>vout: {{vout}}</h4>
+      <h4>生成签名: {{sig}}</h4>
+    </div>
+
+
+    <form class="" action="/trans/form" method="post">
+      <label><input type="text" name="txid" placeholder="txid" value=""></label><br>
+      <label><input type="text" name="vout" placeholder="vout" value=""></label><br>
+      <label><input type="text" name="sig" placeholder="sig" value=""></label><br>
+      <label><input type="text" name="addr" placeholder="addr" value=""></label><br>
+      <label><input type="text" name="value" placeholder="value" value=""></label>
+      <input type="submit" name="" value="提交交易">
+    </form>
+
+
+  </body>
+</html>

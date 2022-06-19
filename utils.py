@@ -1,12 +1,17 @@
-import base64
+from pprint import pprint
+
+import base58
 import hashlib
 import json
 from copy import deepcopy
 from datetime import datetime
+from pathlib import Path
 
 import ecdsa
 
 CURVE = ecdsa.SECP256k1
+NODE_ADDRESS_PATH = 'files/host_address.txt'
+KEY_PATH = 'files/key.txt'
 
 
 def validate_script(lock_script, script_type, in_data, redeem_script=None):
@@ -82,7 +87,7 @@ def time_format(_time: datetime, _format="%Y-%m-%d %H:%M:%S.%f"):
 
 
 def hash_256(s):
-    return hashlib.sha256(s.encode()).hexdigest()
+    return base58.b58encode(hashlib.sha256(s.encode()).digest()).decode()
 
 
 def build_sig(txid, out, sk_list, pk_str):
@@ -100,8 +105,9 @@ def build_simple_vin(txid, vout):
 
 def sign_data(secret_key: str, data: dict):
     sig_byte = build_to_sig_byte(data)
-    sk = ecdsa.SigningKey.from_string(bytes.fromhex(secret_key), curve=CURVE)
-    signature = base64.b64encode(sk.sign(sig_byte)).hex()
+    sk = base58.b58decode(secret_key.encode())
+    _sk = ecdsa.SigningKey.from_string(sk, curve=CURVE)
+    signature = base58.b58encode(_sk.sign(sig_byte)).decode()
     return signature
 
 
@@ -115,8 +121,8 @@ def build_to_sig_byte(data):
 
 
 def validate_ecdsa_sign(public_key: str, sign: str, to_sig_byte: bytes):
-    public_key = base64.b64decode(public_key)
-    signature = base64.b64decode(bytes.fromhex(sign))
+    public_key = base58.b58decode(public_key.encode())
+    signature = base58.b58decode(sign.encode())
     vk = ecdsa.VerifyingKey.from_string(public_key, curve=ecdsa.SECP256k1)
     try:
         return vk.verify(signature, to_sig_byte)
@@ -125,39 +131,59 @@ def validate_ecdsa_sign(public_key: str, sign: str, to_sig_byte: bytes):
 
 
 def generate_ecdsa_keys():
-    sk = ecdsa.SigningKey.generate(curve=CURVE)  # this is your sign (private key)
-    vk = sk.get_verifying_key()  # this is your verification key (public key)
-    public_key = base64.b64encode(vk.to_string()).decode()
-    secret_key = sk.to_string().hex()
-    return public_key, secret_key
+    _sk = ecdsa.SigningKey.generate(curve=CURVE)  # this is your sign (private key)
+    vk = _sk.get_verifying_key()  # this is your verification key (public key)
+    pk = base58.b58encode(vk.to_string()).decode()
+    sk = base58.b58encode(_sk.to_string()).decode()
+    with open(KEY_PATH, "a") as f:
+        f.write(json.dumps({hash_256(pk): (pk, sk)})+"\n")
+    return pk, sk
+
+
+def check_address_in_script(pk, script):
+    if pk in script or hash_256(pk) in script:
+        return True
+    return False
+
+
+def get_host_address(host):
+    p = Path(NODE_ADDRESS_PATH)
+    addr_map = {}
+    if not p.exists():
+        p.touch()
+    else:
+        with p.open("r") as f:
+            addr_map = json.loads(f.read())
+    if host not in addr_map:
+        addr_map[host] = generate_ecdsa_keys()[0]
+        with p.open("w") as f:
+            f.write(json.dumps(addr_map))
+    return addr_map
+
+
+def get_pk_sk_map():
+    addr_map = {}
+    with open(KEY_PATH, "r") as f:
+        for row in f.readlines():
+            addr_map.update(json.loads(row))
+    return addr_map
 
 
 if __name__ == '__main__':
-    one = ('c+CbBAqicDyNKnCjJRM9Pm7UASbFCe7uJ4X/3tgAiQzpNmbpHKdW42j084XPy3DRviQ5pf5l7RgAkhtTp72o9A==',
-           '5b213f48bc40af3c124973d6d86fe3999db79577c981d6570e193c4f4cc20b2b')
+    # ret = generate_ecdsa_keys()
 
-    two = ('b/yxkZEKj1odMvXHFV5IXV0KWQcha4ZBMHRciiS7QsTKgw1KCOrRz6VaWvwB+2fBLiMjBAMYuYUHoggPWq8dtA==',
-           '35d10cb7f0ba220e57a62970ab4c6eee921b7b5bb97f6177dde9b6b775719f19')
-
-    sk = "8c3e50b78fb48eb7761b95561f4ecdd66aa04e180286df93d1507dd63a46a45d"
-    from_address = "ewEf9xFJV1Bt6/7+gjkfebvlmcuY6wuhXsHqKPGyuCgqguxFjzEV+ayQiwTkPy8gtVuEJRg+nfmRN853RLTFXg=="
-    to_address = "TnK1vobvj8MRmyN2Y6ZgARj5HCtpMKg+YvjN2c8X39mplufWciP5TxNhOUaCLZT7NNGXnArjg6ZTrgwdprj7qg=="
-    # data = {
-    #     "from": from_address,
-    #     "to": to_address,
-    #     "memo": "123",
-    #     "script_type": "P2PKH",
-    # }
-    # un_script = f'{sign_data(sk, data)} {from_address}'
-    # data["script_pubkey"] = f'OP_DUP OP_HASH {hash_256(from_address)} OP_EQUALVERIFY OP_CHECKSIG'
-    # ret = validate_script(un_script, data)
+    # ret = get_pk_sk_map()
     # print(ret)
+    one = ('2DmFRxNMpRW3ymtJVoAYLRMRkrqtVh4KWYRBs1ALn3634Pynnmc6pqc4jrfAKZgdqiNyaxduETJMJP7vNcsBSnwy',
+           '3UvM2cvwMJDqeJcgyT49nFaB2ywi9ZtLqiP3LHxhzLpK')
 
-    test_data = build_simple_vin("123", 1)
+    txid = "9bf0ea7e243935d4a51aecb14a2742dd43cf425bd58c1d9837ca6f335989d27c"
+    vout = 0
+    test_data = build_simple_vin(txid, vout)
 
-    red_script = f'2 {one[0]} {two[0]} {from_address} 3 OP_CHECKMULTISIG'
-    test_data["sig"] = build_sig("123", 1, [one[1], two[1]], red_script)
-    lock_script = f"OP_HASH {hash_256(red_script)} OP_EQUALVERIFY"
+    test_data["sig"] = build_sig(txid, vout, [one[1]], '')
+    pprint(test_data)
+    lock_script = f"{one[0]} OP_CHECKSIG"
 
-    ret = validate_script(lock_script, "P2SH", test_data, red_script)
+    ret = validate_script(lock_script, "P2PK", test_data)
     print(ret)

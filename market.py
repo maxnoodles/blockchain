@@ -3,7 +3,6 @@ import binascii
 import sys
 
 
-
 class MerkleTools(object):
     def __init__(self, hash_type="sha256"):
         hash_type = hash_type.lower()
@@ -84,9 +83,9 @@ class MerkleTools(object):
             for x in range(len(self.levels) - 1, 0, -1):
                 level_len = len(self.levels[x])
                 if (index == level_len - 1) and (level_len % 2 == 1):  # skip if this is an odd end node
-                    index = int(index / 2.)
+                    index = int(index / 2)
                     continue
-                is_right_node = index % 2
+                is_right_node = index % 2  # 余 1 则为右边位置的索引
                 sibling_index = index - 1 if is_right_node else index + 1
                 sibling_pos = "left" if is_right_node else "right"
                 sibling_value = self._to_hex(self.levels[x][sibling_index])
@@ -133,14 +132,3 @@ if __name__ == '__main__':
     target_hash = 'a7669b9bd589d1d4a1d122c0b2209d15747bfbea01663139b524b26e97afe183'
 
     print(mt.validate_proof(proof_1, leaf_value, root_value))  # True
-
-    # proof = [
-    #     {right: '09096dbc49b7909917e13b795ebf289ace50b870440f10424af8845fb7761ea5'},
-    #     {right: 'ed2456914e48c1e17b7bd922177291ef8b7f553edf1b1f66b6fc1a076524b22f'},
-    #     {left: 'eac53dde9661daf47a428efea28c81a021c06d64f98eeabbdcff442d992153a8'},
-    # ]
-    # target_hash = '36e0fd847d927d68475f32a94efff30812ee3ce87c7752973f4dd7476aa2e97e'
-    # merkle_root = 'b8b1f39aa2e3fc2dde37f3df04e829f514fb98369b522bfb35c663befa896766'
-    #
-    # is_valid = mt.validate_proof(proof, targetHash, merkleRoot)
-

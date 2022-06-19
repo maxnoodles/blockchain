@@ -1,16 +1,59 @@
-import json
-from uuid import uuid4
-
-from flask import jsonify, request, Flask
+from flask import jsonify, request, Flask, render_template
 
 from myblockchain import BlockChain
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
-from utils import generate_ecdsa_keys
+from utils import check_address_in_script, get_host_address, build_sig, get_pk_sk_map, hash_256
 
 app = Flask(__name__)
-NODE_ADDRESS_PATH = 'host_address.txt'
+
+
+@app.route('/', methods=['POST', 'GET'])
+def home():
+    if request.method == 'POST':
+        address = request.form.get('address')
+
+        in_logs, out_logs = blockchain.get_addr_in_out_logs(address)
+        return render_template('index.html', out_logs=out_logs, in_logs=in_logs, address=address)
+    if request.method == 'GET':
+        return render_template('index.html')
+
+
+@app.route('/utxo/find', methods=['POST'])
+def get_utxo():
+    address = request.form.get('address')
+    utxo_logs, balance = blockchain.get_utxo_balance_out_logs(address)
+    return render_template('index.html', utxo_logs=utxo_logs, utxo_balance=balance, utxo_addr=address)
+
+
+@app.route('/addr/<address>', methods=['GET'])
+def address_info(address):
+
+    pk_sk_map = get_pk_sk_map()
+    pk, sk = pk_sk_map.get(hash_256(address)) or pk_sk_map.get(address)
+    balance, utxo_logs = blockchain.get_utxo_balance_out_logs(address)
+    in_logs, out_logs = blockchain.get_addr_in_out_logs(address)
+    data = {
+        "address": address,
+        "pk": pk,
+        "sk": sk,
+        "balance": balance,
+        "utxo_logs": utxo_logs,
+        "out_logs": out_logs,
+        "in_logs": in_logs,
+    }
+    return render_template('addr.html', data=data)
+
+
+@app.route('/gen_sig', methods=['POST'])
+def gen_sig():
+    data = request.form
+    sk, pk, txid, vout = data["sk"], data["pk"], data["txid"], int(data["vout"])
+    script_type = blockchain.UTXO[txid][vout]["script_type"]
+    if script_type == "P2PK":
+        pk = ''
+    sig = build_sig(txid, vout, [sk], pk)
+    return render_template('index.html', sig=sig, txid=txid, vout=vout)
 
 
 @app.route('/mine', methods=['GET'])
@@ -19,19 +62,6 @@ def mine():
     建立新区块
     :return:
     '''
-    if not blockchain.chain:
-        blockchain.new_transaction([('0', 0)], [(host_address, 50, "P2PK")])
-        block = blockchain.new_block()
-        response = {
-            'message': '创世区块建立',
-            'index': block['index'],
-            'height': block["height"],
-            'transactions': block['transactions'],
-            'proof': block['proof'],
-            'previous_hash': block['previous_hash'],
-        }
-        return jsonify(response), 200
-
     # 挖矿获得一个数字货币奖励，将奖励的交易记录添加到账本中，其他的交易记录通过new_transaction接口添加
     blockchain.new_transaction([('0', 0)], [(host_address, 50, "P2PK")])
     block = blockchain.new_block()
@@ -47,20 +77,39 @@ def mine():
     return jsonify(response), 200
 
 
-@app.route('/transactions/new', methods=['POST'])
+@app.route('/trans/sync_trans', methods=['POST'])
+def sync_one_trans():
+    trans = request.get_json()
+    blockchain.add_trans_and_utxo(trans)
+    resp = {"message": f"添加 {trans['txid']} 成功"}
+    return jsonify(resp)
+
+
+@app.route('/trans/new', methods=['POST'])
 def new_transaction():
     '''
     将新的交易添加到最新的区块中
     :return:
     '''
     values = request.get_json()
-
     required = ['txid_in_list', 'out_list']
     if not all(k in values for k in required):
         return '缺失必要字段', 400
-
     blockchain.new_transaction(values['txid_in_list'], values['out_list'])
+    response = {'message': f'交易账本被添加到新的区块 {len(blockchain.chain)} 中'}
+    return jsonify(response), 200
 
+
+@app.route('/trans/form', methods=['POST'])
+def new_transaction_by_form():
+    '''
+    将新的交易添加到最新的区块中
+    :return:
+    '''
+    data = request.form
+    txid_in_list = [(data["txid"], int(data["vout"]), data["sig"])]
+    out_list = [(data["addr"], float(data["value"]), "P2PKH")]
+    blockchain.new_transaction(txid_in_list, out_list)
     response = {'message': f'交易账本被添加到新的区块中{len(blockchain.chain)}'}
     return jsonify(response), 200
 
@@ -72,8 +121,20 @@ def full_chain():
     :return: 整份区块链
     '''
     response = {
-        'chain': blockchain.chain,
         'length': len(blockchain.chain),
+        'chain': blockchain.chain,
+    }
+    return jsonify(response), 200
+
+
+@app.route('/chain/last', methods=['GET'])
+def last_block():
+    '''
+    获得完整的区块链
+    :return: 整份区块链
+    '''
+    response = {
+        'chain': blockchain.last_block,
     }
     return jsonify(response), 200
 
@@ -119,21 +180,6 @@ def consensus():
     return jsonify(response), 200
 
 
-def get_host_address(host):
-    p = Path(NODE_ADDRESS_PATH)
-    addr_map = {}
-    if not p.exists():
-        p.touch()
-    else:
-        with p.open("r") as f:
-            addr_map = json.loads(f.read())
-    if host not in addr_map:
-        addr_map[host] = generate_ecdsa_keys()
-        with p.open("w") as f:
-            f.write(json.dumps(addr_map))
-    return addr_map
-        
-
 if __name__ == '__main__':
     from argparse import ArgumentParser
 
@@ -148,7 +194,7 @@ if __name__ == '__main__':
     blockchain.init_nodes(host)
     
     host_address_map = get_host_address(host)
-    host_address = host_address_map[host][0]
+    host_address = host_address_map[host]
 
     with ThreadPoolExecutor(max_workers=3,) as executor:
         executor.submit(blockchain.file_sync)

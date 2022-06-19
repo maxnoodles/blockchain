@@ -10,7 +10,7 @@ from pathlib import Path
 import requests
 
 from market import MerkleTools
-from utils import validate_script, build_simple_vin
+from utils import validate_script, check_address_in_script, get_host_address
 
 
 def hash_block(block):
@@ -132,7 +132,7 @@ class BlockChain:
         """
         _in = {
             "txid": txid,
-            "vout": vout,
+            "vout": int(vout),
         }
         if sig:
             _in["sig"] = sig
@@ -186,35 +186,36 @@ class BlockChain:
                     raise ValueError(f"nlock_time 需要大于当前时间")
 
         in_value_sum = 0
-
         if len(vin_list) != 1 or vin_list[0]["txid"] == "0":
             # 创币交易，跳过
             pass
         else:
             for vin in vin_list:
-                txid, out = vin["txid"], vin["vout"]
+                txid, out_idx = vin["txid"], vin["vout"]
                 if txid == '0':
                     continue
                 if txid not in self.UTXO:
                     raise ValueError(f"txid {txid} 无效")
-                if out not in self.UTXO[txid]:
-                    raise ValueError(f"txid {txid} 使用的 vout {out} 无效")
+                if out_idx not in self.UTXO[txid]:
+                    raise ValueError(f"txid {txid} 使用的 vout {out_idx} 无效")
 
                 # 验证解锁脚本
-                out = self.UTXO[txid][out]
+                out_data = self.UTXO[txid][out_idx]
                 if not validate_script(
-                        out["script_pubkey"],
-                        out["script_type"],
+                        out_data["script_pubkey"],
+                        out_data["script_type"],
                         vin,
                         vin.get("redeem_script")
                 ):
                     raise ValueError("script result False")
-
-                in_value_sum += self.UTXO[txid][out]["value"]
+                in_value_sum += out_data["value"]
 
             out_value_sum = sum([i["value"] for i in vout_list])
             if in_value_sum < out_value_sum:
                 raise ValueError("输入金额小于输出金额")
+            else:
+                # 矿工费
+                pass
 
         trans = {
             "vin": vin_list,
@@ -228,40 +229,36 @@ class BlockChain:
         if txid in self.UTXO:
             raise ValueError("此交易已经被保存在区块中")
 
-        self.current_transactions.append(trans)
-        self.adjust_UTXO(vin_list, vout_list, txid)
+        self.add_trans_and_utxo(trans)
         # 广播到其他节点
-        self.flood_trans(txid_in_list, out_list)
+        self.flood_trans(trans)
 
-    def flood_trans(self, txid_in_list, out_list):
+    def add_trans_and_utxo(self, trans):
+        self.current_transactions.append(trans)
+        self.adjust_UTXO(trans)
+
+    def flood_trans(self, trans):
         for node in self.nodes:
             if node == self.host:
                 continue
             try:
-                data = {
-                    "txid_in_list": txid_in_list,
-                    "out_list": out_list
-                }
-                requests.post(f'http://{node}/transactions/new', json=data, timeout=5)
+                requests.post(f'http://{node}/trans/sync_trans', json=trans, timeout=5)
             except:
                 pass
 
-    def adjust_UTXO(self, vin_list, vout_list, txid):
+    def adjust_UTXO(self, trans):
         """
         调整 UTXO
-        :param vin_list: 交易输入
-        :param vout_list: 交易输出
-        :param txid: 新生成的交易 id
-        :return:
+        :param trans: 一个交易
         """
-
+        txid = trans["txid"]
         # UTXO 中删除 vin
-        for vin in vin_list:
+        for vin in trans["vin"]:
             in_txid, out = vin["txid"], vin["vout"]
             if in_txid != '0':
                 self.UTXO[in_txid].pop(out)
         # UTXO 中增加 vout
-        for idx, vout in enumerate(vout_list):
+        for idx, vout in enumerate(trans["vout"]):
             self.UTXO[txid][idx] = vout
 
     def register_node(self, url):
@@ -309,11 +306,13 @@ class BlockChain:
 
                     # 判断邻居节点发送过来的区块链长度是否最长且是否合法
                     if length > local_len and self.valid_chain(chain):
+                        print(f"使用长度更长 {length} 的区块链 {chain}")
                         # 使用邻居节点的区块链
                         local_len = length
                         new_chain = chain
             except:
-                # 节点没开机
+                print(f"节点 {node} 没有开机")
+                self.nodes.remove(node)
                 pass
         if new_chain:
             self.chain = new_chain
@@ -332,7 +331,6 @@ class BlockChain:
             time.sleep(5)
             print(f"开始同步其他节点区块链 {self.nodes}")
             self.resolve_conflicts()
-            print(self.chain)
 
     def file_sync(self):
         """
@@ -341,10 +339,16 @@ class BlockChain:
         """
         while True:
             time.sleep(30)
+            if self.current_transactions:
+                self.new_block()
             self.write_to_file()
 
     def write_to_file(self):
         print("开始写入节点")
+        _dir = "./chain_file"
+        path = Path(_dir)
+        if not path.exists():
+            path.mkdir()
         with open(self.file_name, "w") as f:
             for block in self.chain:
                 txt = json.dumps(block, sort_keys=True)
@@ -356,6 +360,11 @@ class BlockChain:
                 for row in f.readlines():
                     block = json.loads(row)
                     self.chain.append(block)
+
+                    for trans in block["transactions"]:
+                        self.adjust_UTXO(trans)
+
+            print(self.UTXO)
             print("从文件加载完成", self.chain)
 
     def init_nodes(self, host):
@@ -374,14 +383,45 @@ class BlockChain:
             logging.exception(e)
             # 节点没开机
 
+    def get_addr_in_out_logs(self, address):
+        in_logs, out_logs = [], []
+        txid_out_set = dict()
+        for block in self.chain:
+            for trans in block["transactions"]:
+                txid = trans["txid"]
+                for _in in trans["vin"]:
+                    key = (_in["txid"], _in["vout"])
+                    if key in txid_out_set:
+                        in_logs.append(trans)
+                        txid_out_set.pop(key)
+
+                for idx, out in enumerate(trans["vout"]):
+                    if check_address_in_script(address, out["script_pubkey"]):
+                        out_logs.append(trans)
+                        txid_out_set[(txid, idx)] = out["value"]
+        return in_logs, out_logs
+
+    def get_utxo_balance_out_logs(self, address):
+        utxo_logs = []
+        balance = 0
+        for txid, out_dict in self.UTXO.items():
+            for out_idx, out in out_dict.items():
+                if check_address_in_script(address, out["script_pubkey"]):
+                    utxo_logs.append({txid: out_dict})
+                    balance += out["value"]
+        return balance, utxo_logs
+
 
 if __name__ == "__main__":
-    chain = BlockChain("127.0.0.1:5000")
+    host = "127.0.0.1:5000"
+    chain = BlockChain(host)
     # chain.reload_by_file()
+    host_address_map = get_host_address(host)
+    host_address = host_address_map[host]
     _in = [("0", 0)]
-    _out = [("6e571da347b66acfb7109629be894c06d8294482b4da701398405fe292c78474", 50, "P2PK")]
-    for i in range(5):
-        chain.new_transaction(_in, _out)
-        chain.new_block()
+    _out = [(host_address, 50, "P2PK")]
+    chain.new_transaction(_in, _out)
+    chain.new_block()
     chain.write_to_file()
     print(chain)
+
