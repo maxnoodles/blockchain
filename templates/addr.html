@@ -8,7 +8,7 @@
 
 
     <div class="">
-      <h4>哈希地址: {{data["address"]}} </h4>
+      <h4>哈希地址: {{data["pk_hash"]}} </h4>
       <h4>公钥: {{data["pk"]}} </h4>
       <h4>私钥: {{data["sk"]}} </h4>
       <h4>utxo余额: {{data["balance"]}} </h4>
@@ -18,11 +18,11 @@
       {% endfor %}
       <h4>花费交易: {{data["in_logs"]|length}} 条</h4>
       {% for logs in data["in_logs"] %}
-        <p>utxo: {{logs}}</p>
+        <p>{{logs}}</p>
       {% endfor %}
       <h4>收到交易: {{data["out_logs"]|length}} 条</h4>
       {% for logs in data["out_logs"] %}
-        <p>utxo: {{logs}}</p>
+        <p>{{logs}}</p>
       {% endfor %}
     </div>
 

@@ -30,11 +30,16 @@ def get_utxo():
 def address_info(address):
 
     pk_sk_map = get_pk_sk_map()
-    pk, sk = pk_sk_map.get(hash_256(address)) or pk_sk_map.get(address)
+    if address in pk_sk_map:
+        pk_hash = address
+        pk, sk = pk_sk_map.get(address)
+    else:
+        pk_hash = hash_256(address)
+        pk, sk = pk_sk_map.get(pk_hash)
     balance, utxo_logs = blockchain.get_utxo_balance_out_logs(address)
     in_logs, out_logs = blockchain.get_addr_in_out_logs(address)
     data = {
-        "address": address,
+        "pk_hash": pk_hash,
         "pk": pk,
         "sk": sk,
         "balance": balance,

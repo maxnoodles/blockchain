@@ -30,8 +30,8 @@ class BlockChain:
         self.full_node = "127.0.0.1:5000"
         self.host = host
         self.nodes = {host} if host else set()
-        self.file_name = f"./chain_file/{self.host.replace(':', '_')}_chain.txt"
-        self.address = get_host_address(host)[host]
+        self.file_name = f"./chain_file/{self.host.replace(':', '_')}_chain.txt" if host else ''
+        self.address = get_host_address(host)
 
     def init_block(self):
         return {
@@ -59,7 +59,7 @@ class BlockChain:
         :return: 一个新区块
         """
         # 矿工奖励
-        self.new_transaction([('0', 0)], [(self.address, COIN_AWARD, "P2PK")])
+        self.new_transaction(*self.build_mine_in_out())
         block = self.init_block()
         # proof 工作量证明的随机数
         # index 工作量运行的哈希值
@@ -71,6 +71,9 @@ class BlockChain:
         # 将区块添加到区块链中，此时交易账本是空，工作量证明是空
         self.chain.append(block)
         return block
+
+    def build_mine_in_out(self, value=COIN_AWARD):
+        return [('0', 0)], [(self.address, value, "P2PKH")]
 
     @property
     def last_block(self):
@@ -114,9 +117,9 @@ class BlockChain:
     def valid_proof(proof, block_hash) -> (bool, str):
         """
         验证工作量证明，计算出的hash是否正确
-        对上一个区块的proof和hash与当期区块的proof最sha256运算
+        对上一个区块的proof和hash与当期区块的proof最sha256运算、
+        :param proof: 当前区块的随机数（工作量）
         :param block_hash: 本区块的 hash
-        :param proof: 当前区块的工作量
         """
         guess = f'{proof}{block_hash}'.encode()
         guess_hash = hashlib.sha256(guess).hexdigest()
@@ -183,6 +186,34 @@ class BlockChain:
         vout_list = [self.build_one_vout(*i) for i in out_list]
 
         # 小于 5 亿，解释成区块高度, 大于 5 亿为时间戳
+        self.is_valid_nlock_time(nlock_time)
+
+        self.is_valid_trans(vin_list)
+
+        # 矿工手续费
+        fee = self.get_mine_fee(vin_list, vout_list)
+        if fee > 0:
+            _, _out = self.build_mine_in_out(value=fee)
+            vout_list.append(self.build_one_vout(*_out[0]))
+
+        trans = {
+            "vin": vin_list,
+            "vout": vout_list,
+            "nlock_time": nlock_time or len(self.chain),
+        }
+
+        txid = self.hash(trans)
+        trans["txid"] = txid
+
+        if txid in self.UTXO:
+            raise ValueError("此交易已经被保存在区块中")
+
+        self.add_trans_and_utxo(trans)
+        # 广播到其他节点
+        self.flood_trans(trans)
+        return trans
+
+    def is_valid_nlock_time(self, nlock_time):
         if nlock_time:
             if nlock_time < 500000000:
                 if self.height < nlock_time:
@@ -191,10 +222,29 @@ class BlockChain:
                 if nlock_time < time.time():
                     raise ValueError(f"nlock_time 需要大于当前时间")
 
-        in_value_sum = 0
-        if len(vin_list) != 1 or vin_list[0]["txid"] == "0":
+    @staticmethod
+    def is_mine_trans(vin_list):
+        return len(vin_list) == 1 and vin_list[0]["txid"] == "0"
+
+    def get_mine_fee(self, vin_list, vout_list):
+        if self.is_mine_trans(vin_list):
+            return 0
+        else:
+            in_value_sum = 0
+            for vin in vin_list:
+                txid, out_idx = vin["txid"], vin["vout"]
+                out_data = self.UTXO[txid][out_idx]
+                in_value_sum += out_data["value"]
+        out_value_sum = sum([i["value"] for i in vout_list])
+        fee = in_value_sum - out_value_sum
+        if fee < 0:
+            raise ValueError("输入费用小于输出费用")
+        return fee
+
+    def is_valid_trans(self, vin_list):
+        if self.is_mine_trans(vin_list):
             # 创币交易，跳过
-            pass
+            return True
         else:
             for vin in vin_list:
                 txid, out_idx = vin["txid"], vin["vout"]
@@ -214,31 +264,6 @@ class BlockChain:
                         vin.get("redeem_script")
                 ):
                     raise ValueError("script result False")
-                in_value_sum += out_data["value"]
-
-            out_value_sum = sum([i["value"] for i in vout_list])
-            if in_value_sum < out_value_sum:
-                raise ValueError("输入金额小于输出金额")
-            else:
-                # 矿工费
-                pass
-
-        trans = {
-            "vin": vin_list,
-            "vout": vout_list,
-            "nlock_time": nlock_time or len(self.chain),
-        }
-        # todo 自动找零
-        txid = self.hash(trans)
-        trans["txid"] = txid
-
-        if txid in self.UTXO:
-            raise ValueError("此交易已经被保存在区块中")
-
-        self.add_trans_and_utxo(trans)
-        # 广播到其他节点
-        self.flood_trans(trans)
-        return trans
 
     def add_trans_and_utxo(self, trans):
         self.current_transactions.append(trans)
@@ -423,10 +448,8 @@ if __name__ == "__main__":
     host = "127.0.0.1:5000"
     chain = BlockChain(host)
     # chain.reload_by_file()
-    _in = [("0", 0)]
-    _out = [(chain.address, 50, "P2PK")]
-    chain.new_transaction(_in, _out)
-    chain.new_block()
+    for i in range(2):
+        chain.new_block()
     chain.write_to_file()
     print(chain)
 

@@ -93,7 +93,10 @@ def hash_256(s):
 def build_sig(txid, out, sk_list, pk_str):
     vin = build_simple_vin(txid, out)
     sig_str = ' '.join((sign_data(sk, vin) for sk in sk_list))
-    return f"{sig_str} {pk_str}"
+    if pk_str:
+        return f"{sig_str} {pk_str}"
+    else:
+        return sig_str
 
 
 def build_simple_vin(txid, vout):
@@ -105,6 +108,11 @@ def build_simple_vin(txid, vout):
 
 def sign_data(secret_key: str, data: dict):
     sig_byte = build_to_sig_byte(data)
+    signature = sign_byte(secret_key, sig_byte)
+    return signature
+
+
+def sign_byte(secret_key, sig_byte):
     sk = base58.b58decode(secret_key.encode())
     _sk = ecdsa.SigningKey.from_string(sk, curve=CURVE)
     signature = base58.b58encode(_sk.sign(sig_byte)).decode()
@@ -148,7 +156,7 @@ def check_address_in_script(pk, script):
 
 def get_host_address(host):
     if not host:
-        return generate_ecdsa_keys()[0]
+        return hash_256(generate_ecdsa_keys()[0])
     p = Path(NODE_ADDRESS_PATH)
     addr_map = {}
     if not p.exists():
@@ -157,10 +165,10 @@ def get_host_address(host):
         with p.open("r") as f:
             addr_map = json.loads(f.read())
     if host not in addr_map:
-        addr_map[host] = generate_ecdsa_keys()[0]
+        addr_map[host] = hash_256(generate_ecdsa_keys()[0])
         with p.open("w") as f:
             f.write(json.dumps(addr_map))
-    return addr_map
+    return addr_map[host]
 
 
 def get_pk_sk_map():
@@ -176,16 +184,22 @@ if __name__ == '__main__':
 
     # ret = get_pk_sk_map()
     # print(ret)
-    one = ('2DmFRxNMpRW3ymtJVoAYLRMRkrqtVh4KWYRBs1ALn3634Pynnmc6pqc4jrfAKZgdqiNyaxduETJMJP7vNcsBSnwy',
-           '3UvM2cvwMJDqeJcgyT49nFaB2ywi9ZtLqiP3LHxhzLpK')
+    alice = {
+        "public_key": "qSXkT8ZJvXhzmaEJLABgxVvqJUX1wgLjPm2pKJ7kgREMNB5KADn2JXDW33J1C7SuWoPPTgVhvYj8HyKHXDoDXge",
+        "private_key": "3WXGsziAPqHgpjYqxY1HpVMBNGS9Yj3G4SgN7nyb3SkL",
+    }
 
-    txid = "9bf0ea7e243935d4a51aecb14a2742dd43cf425bd58c1d9837ca6f335989d27c"
+    txid = "521137f91350534065ce21477d4ac169eb3622e5470da5d9b212875e52d0d1d0"
     vout = 0
     test_data = build_simple_vin(txid, vout)
 
-    test_data["sig"] = build_sig(txid, vout, [one[1]], '')
-    pprint(test_data)
-    lock_script = f"{one[0]} OP_CHECKSIG"
+    test_data["sig"] = build_sig(txid, vout, [alice["private_key"]], '')
 
+    d = sign_byte(alice["private_key"], txid.encode())
+    print(d)
+
+    lock_script = f"{alice['public_key']} OP_CHECKSIG"
     ret = validate_script(lock_script, "P2PK", test_data)
     print(ret)
+
+# ["2EsTD7vXss9thrZVyVW1Fg1peMW7wtyzbB15vGRSQF79cX7Utk8jBaPrdojwryN6vY6GcjqrYHcCsxtNyrRmQ5T9", "RaepRVM9Ep4q5sG4QT7M3Ji7AquWnzVJmxY4tp2oDKp"]
