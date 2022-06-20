@@ -3,7 +3,7 @@ from flask import jsonify, request, Flask, render_template
 from myblockchain import BlockChain
 from concurrent.futures import ThreadPoolExecutor
 
-from utils import check_address_in_script, get_host_address, build_sig, get_pk_sk_map, hash_256
+from utils import build_sig, get_pk_sk_map, hash_256
 
 app = Flask(__name__)
 
@@ -63,7 +63,6 @@ def mine():
     :return:
     '''
     # 挖矿获得一个数字货币奖励，将奖励的交易记录添加到账本中，其他的交易记录通过new_transaction接口添加
-    blockchain.new_transaction([('0', 0)], [(host_address, 50, "P2PK")])
     block = blockchain.new_block()
 
     response = {
@@ -192,9 +191,6 @@ if __name__ == '__main__':
     blockchain = BlockChain(host)
     blockchain.reload_by_file()
     blockchain.init_nodes(host)
-    
-    host_address_map = get_host_address(host)
-    host_address = host_address_map[host]
 
     with ThreadPoolExecutor(max_workers=3,) as executor:
         executor.submit(blockchain.file_sync)

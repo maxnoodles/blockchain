@@ -147,6 +147,8 @@ def check_address_in_script(pk, script):
 
 
 def get_host_address(host):
+    if not host:
+        return generate_ecdsa_keys()[0]
     p = Path(NODE_ADDRESS_PATH)
     addr_map = {}
     if not p.exists():

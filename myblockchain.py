@@ -13,6 +13,9 @@ from market import MerkleTools
 from utils import validate_script, check_address_in_script, get_host_address
 
 
+COIN_AWARD = 50
+
+
 def hash_block(block):
     block_str = json.dumps(block, sort_key=True).encode()
     return hashlib.sha256(block_str).hexdigest()
@@ -28,6 +31,7 @@ class BlockChain:
         self.host = host
         self.nodes = {host} if host else set()
         self.file_name = f"./chain_file/{self.host.replace(':', '_')}_chain.txt"
+        self.address = get_host_address(host)[host]
 
     def init_block(self):
         return {
@@ -54,6 +58,8 @@ class BlockChain:
         创建一个新区块加入到区块链中
         :return: 一个新区块
         """
+        # 矿工奖励
+        self.new_transaction([('0', 0)], [(self.address, COIN_AWARD, "P2PK")])
         block = self.init_block()
         # proof 工作量证明的随机数
         # index 工作量运行的哈希值
@@ -232,6 +238,7 @@ class BlockChain:
         self.add_trans_and_utxo(trans)
         # 广播到其他节点
         self.flood_trans(trans)
+        return trans
 
     def add_trans_and_utxo(self, trans):
         self.current_transactions.append(trans)
@@ -416,10 +423,8 @@ if __name__ == "__main__":
     host = "127.0.0.1:5000"
     chain = BlockChain(host)
     # chain.reload_by_file()
-    host_address_map = get_host_address(host)
-    host_address = host_address_map[host]
     _in = [("0", 0)]
-    _out = [(host_address, 50, "P2PK")]
+    _out = [(chain.address, 50, "P2PK")]
     chain.new_transaction(_in, _out)
     chain.new_block()
     chain.write_to_file()
