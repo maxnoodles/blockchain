@@ -14,24 +14,29 @@ NODE_ADDRESS_PATH = 'files/host_address.txt'
 KEY_PATH = 'files/key.txt'
 
 
-def validate_script(lock_script, script_type, in_data, redeem_script=None):
+def validate_script(lock_script, script_type, in_data):
     tmp_data = deepcopy(in_data)
     unlock_script = tmp_data.pop("sig")
     match script_type:
         case "P2SH":
             """
                两个脚本经由两步实现组合。 首先，将 unlock_script 与 lock_script 比对以确认其与哈希是否匹配
-               <2 PK1 PK2 PK3 3 CHECKMULTISIG> HASH <redeem scriptHash> EQUAL
+               <2 PK1 PK2 PK3 3 OP_CHECKMULTISIG> HASH <redeem scriptHash> OP_EQUALVERIFY
                假如兑换脚本哈希匹配，解锁脚本自行执行以解锁兑换脚本
-               <Sig1> <Sig2> 2 PK1 PK2 PK3 3 CHECKMULTISIG
+               <Sig1> <Sig2> 2 PK1 PK2 PK3 3 OP_CHECKMULTISIG
             """
             lock_script = lock_script.lstrip("OP_HASH")
-            redeem_hash = hash_256(redeem_script)
+            redeem_hash = hash_256(tmp_data["redeem_script"])
             return eval_script(f"{redeem_hash} {lock_script} {unlock_script}", tmp_data)
         case "P2PKH" | "P2PK":
             # OP_DUP OP_HASH160 ab68025513c3dbd2f7b92a94e0581f5d50f654e7 OP_EQUALVERIFY OP_CHECKSIG
             return eval_script(f"{unlock_script} {lock_script}", tmp_data)
     return False
+
+
+def build_multi_script(pk_list, sig_nums):
+    script = f"{sig_nums} {' '.join(pk_list)} {len(pk_list)} OP_CHECKMULTISIG"
+    return script, hash_256(script)
 
 
 def eval_script(script, data):
@@ -86,13 +91,16 @@ def time_format(_time: datetime, _format="%Y-%m-%d %H:%M:%S.%f"):
     return _time.strftime(_format)
 
 
-def hash_256(s):
-    return base58.b58encode(hashlib.sha256(s.encode()).digest()).decode()
+def hash_256(s, b58=True):
+    data = hashlib.sha256(s.encode())
+    if b58:
+        return base58.b58encode(data.digest()).decode()
+    else:
+        return data.hexdigest()
 
 
-def build_sig(txid, out, sk_list, pk_str):
-    vin = build_simple_vin(txid, out)
-    sig_str = ' '.join((sign_data(sk, vin) for sk in sk_list))
+def build_sig(data, sk_list, pk_str):
+    sig_str = ' '.join((sign_data(sk, data) for sk in sk_list))
     if pk_str:
         return f"{sig_str} {pk_str}"
     else:
@@ -138,13 +146,14 @@ def validate_ecdsa_sign(public_key: str, sign: str, to_sig_byte: bytes):
         return False
 
 
-def generate_ecdsa_keys():
+def generate_ecdsa_keys(write_file=True):
     _sk = ecdsa.SigningKey.generate(curve=CURVE)  # this is your sign (private key)
     vk = _sk.get_verifying_key()  # this is your verification key (public key)
     pk = base58.b58encode(vk.to_string()).decode()
     sk = base58.b58encode(_sk.to_string()).decode()
-    with open(KEY_PATH, "a") as f:
-        f.write(json.dumps({hash_256(pk): (pk, sk)})+"\n")
+    if write_file:
+        with open(KEY_PATH, "a") as f:
+            f.write(json.dumps({hash_256(pk): (pk, sk)})+"\n")
     return pk, sk
 
 
@@ -179,27 +188,17 @@ def get_pk_sk_map():
     return addr_map
 
 
-if __name__ == '__main__':
-    # ret = generate_ecdsa_keys()
-
-    # ret = get_pk_sk_map()
-    # print(ret)
-    alice = {
-        "public_key": "qSXkT8ZJvXhzmaEJLABgxVvqJUX1wgLjPm2pKJ7kgREMNB5KADn2JXDW33J1C7SuWoPPTgVhvYj8HyKHXDoDXge",
-        "private_key": "3WXGsziAPqHgpjYqxY1HpVMBNGS9Yj3G4SgN7nyb3SkL",
-    }
-
-    txid = "521137f91350534065ce21477d4ac169eb3622e5470da5d9b212875e52d0d1d0"
-    vout = 0
-    test_data = build_simple_vin(txid, vout)
-
-    test_data["sig"] = build_sig(txid, vout, [alice["private_key"]], '')
-
-    d = sign_byte(alice["private_key"], txid.encode())
-    print(d)
-
-    lock_script = f"{alice['public_key']} OP_CHECKSIG"
-    ret = validate_script(lock_script, "P2PK", test_data)
-    print(ret)
-
-# ["2EsTD7vXss9thrZVyVW1Fg1peMW7wtyzbB15vGRSQF79cX7Utk8jBaPrdojwryN6vY6GcjqrYHcCsxtNyrRmQ5T9", "RaepRVM9Ep4q5sG4QT7M3Ji7AquWnzVJmxY4tp2oDKp"]
+def build_script_pubkey(addr, script_type):
+    match script_type:
+        case "P2PK":
+            # <PubKey> OP_CHECKSIG
+            script_pubkey = f"{addr} OP_CHECKSIG"
+        case "P2SH":
+            # OP_HASH <PubKeyHash> OP_CHECKSIG
+            script_pubkey = f"OP_HASH {addr} OP_EQUALVERIFY"
+        case "P2PKH":
+            # OP_DUP OP_HASH <PubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+            script_pubkey = f"OP_DUP OP_HASH {addr} OP_EQUALVERIFY OP_CHECKSIG"
+        case _:
+            raise ValueError(f"{script_type} error")
+    return script_pubkey

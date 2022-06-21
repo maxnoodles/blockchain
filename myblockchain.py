@@ -1,5 +1,4 @@
 import copy
-import hashlib
 import json
 import logging
 from collections import defaultdict
@@ -10,15 +9,9 @@ from pathlib import Path
 import requests
 
 from market import MerkleTools
-from utils import validate_script, check_address_in_script, get_host_address
-
+from utils import validate_script, check_address_in_script, get_host_address, build_script_pubkey, hash_256
 
 COIN_AWARD = 50
-
-
-def hash_block(block):
-    block_str = json.dumps(block, sort_key=True).encode()
-    return hashlib.sha256(block_str).hexdigest()
 
 
 class BlockChain:
@@ -109,9 +102,9 @@ class BlockChain:
         :param block: 区块
         :return: 区块hash
         """
-        # sort_keys()：json解析后获得的字典将通过key排序，encode()进行utf-8编码，不然hashlib加密会报错
-        block_string = json.dumps(block, sort_keys=True).encode()
-        return hashlib.sha256(block_string).hexdigest()
+        # sort_keys()：json解析后获得的字典将通过key排序
+        block_string = json.dumps(block, sort_keys=True)
+        return hash_256(block_string)
 
     @staticmethod
     def valid_proof(proof, block_hash) -> (bool, str):
@@ -121,8 +114,8 @@ class BlockChain:
         :param proof: 当前区块的随机数（工作量）
         :param block_hash: 本区块的 hash
         """
-        guess = f'{proof}{block_hash}'.encode()
-        guess_hash = hashlib.sha256(guess).hexdigest()
+        guess = f'{proof}{block_hash}'
+        guess_hash = hash_256(guess, b58=False)
         return guess_hash[:4] == "0000", guess_hash
 
     @property
@@ -149,8 +142,7 @@ class BlockChain:
             _in["redeem_script"] = redeem_script
         return _in
 
-    @staticmethod
-    def build_one_vout(addr, value, script_type):
+    def build_one_vout(self, addr, value, script_type):
         """
         构建一个交易输出
         :param addr: 哈希地址
@@ -159,17 +151,11 @@ class BlockChain:
         :return:
         """
         assert script_type in ["P2PK", "P2PKH", "P2SH"]
-        out = {"script_type": script_type, "value": value}
-        match script_type:
-            case "P2PK":
-                # <PubKey> OP_CHECKSIG
-                out["script_pubkey"] = f"{addr} OP_CHECKSIG"
-            case "P2PKH":
-                # OP_DUP OP_HASH <PubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
-                out["script_pubkey"] = f"OP_DUP OP_HASH {addr} OP_EQUALVERIFY OP_CHECKSIG"
-            case "P2SH":
-                # OP_HASH <PubKeyHash> OP_CHECKSIG
-                out["script_hash"] = f"OP_HASH {addr} OP_EQUAL"
+        out = {
+            "script_type": script_type,
+            "value": value,
+            "script_pubkey": build_script_pubkey(addr, script_type)
+        }
         return out
 
     def new_transaction(self, txid_in_list: list[tuple[str, int, ...]], out_list: list[tuple[str, float, str]],
@@ -447,9 +433,8 @@ class BlockChain:
 if __name__ == "__main__":
     host = "127.0.0.1:5000"
     chain = BlockChain(host)
-    # chain.reload_by_file()
+    chain.reload_by_file()
     for i in range(2):
         chain.new_block()
     chain.write_to_file()
     print(chain)
-

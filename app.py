@@ -3,7 +3,7 @@ from flask import jsonify, request, Flask, render_template
 from myblockchain import BlockChain
 from concurrent.futures import ThreadPoolExecutor
 
-from utils import build_sig, get_pk_sk_map, hash_256
+from utils import build_sig, get_pk_sk_map, hash_256, build_simple_vin
 
 app = Flask(__name__)
 
@@ -57,7 +57,8 @@ def gen_sig():
     script_type = blockchain.UTXO[txid][vout]["script_type"]
     if script_type == "P2PK":
         pk = ''
-    sig = build_sig(txid, vout, [sk], pk)
+    to_sig_data = build_simple_vin(txid, vout)
+    sig = build_sig(to_sig_data, [sk], pk)
     return render_template('index.html', sig=sig, txid=txid, vout=vout)
 
 
