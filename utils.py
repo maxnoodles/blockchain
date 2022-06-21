@@ -101,10 +101,7 @@ def hash_256(s, b58=True):
 
 def build_sig(data, sk_list, pk_str):
     sig_str = ' '.join((sign_data(sk, data) for sk in sk_list))
-    if pk_str:
-        return f"{sig_str} {pk_str}"
-    else:
-        return sig_str
+    return ' '.join([sig_str, pk_str])
 
 
 def build_simple_vin(txid, vout):

@@ -19,7 +19,7 @@ class UtilTest(TestCase):
         txid = "521137f91350534065ce21477d4ac169eb3622e5470da5d9b212875e52d0d1d0"
         vout = 0
         test_data = build_simple_vin(txid, vout)
-        test_data["sig"] = build_sig(txid, vout, [self.sk], self.pk)
+        test_data["sig"] = build_sig(test_data, [self.sk], self.pk)
 
         script_type = "P2PKH"
         lock_script = build_script_pubkey(hash_256(self.pk), script_type)
