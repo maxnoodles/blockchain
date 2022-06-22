@@ -15,6 +15,4 @@ Python 3.10+
 
 **market.py** 默克尔树的实现代码，参考 https://github.com/Tierion/pymerkletools
 
-
-### TODO
-目前的测试函数都写在对应文件的末尾，准备完善单元测试
+test 目录包含了重要函数的单元测试

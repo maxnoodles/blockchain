@@ -9,7 +9,13 @@ from pathlib import Path
 import requests
 
 from market import MerkleTools
-from utils import validate_script, check_address_in_script, get_host_address, build_script_pubkey, hash_256
+from utils import (
+    validate_script,
+    check_address_in_script,
+    get_host_address,
+    build_script_pubkey,
+    hash_256,
+)
 
 COIN_AWARD = 50
 
@@ -19,11 +25,13 @@ class BlockChain:
         self.current_transactions = []
         self.chain = []
         self.market_trees = []
+        self.nodes = {host} if host else set()
         self.UTXO = defaultdict(dict)
         self.full_node = "127.0.0.1:5000"
         self.host = host
-        self.nodes = {host} if host else set()
-        self.file_name = f"./chain_file/{self.host.replace(':', '_')}_chain.txt" if host else ''
+        self.file_name = (
+            f"./chain_file/{self.host.replace(':', '_')}_chain.txt" if host else ""
+        )
         self.address = get_host_address(host)
 
     def init_block(self):
@@ -33,9 +41,9 @@ class BlockChain:
             # 时间戳
             "timestamp": time.time(),
             # 上一区块的 hash
-            'previous_hash': self.last_block["index"] if self.chain else None,
+            "previous_hash": self.last_block["index"] if self.chain else None,
             # 默克尔树根
-            "market_root": self.market(self.current_transactions)
+            "market_root": self.market(self.current_transactions),
         }
 
     def market(self, trans_list):
@@ -66,7 +74,7 @@ class BlockChain:
         return block
 
     def build_mine_in_out(self, value=COIN_AWARD):
-        return [('0', 0)], [(self.address, value, "P2PKH")]
+        return [("0", 0)], [(self.address, value, "P2PKH")]
 
     @property
     def last_block(self):
@@ -114,7 +122,7 @@ class BlockChain:
         :param proof: 当前区块的随机数（工作量）
         :param block_hash: 本区块的 hash
         """
-        guess = f'{proof}{block_hash}'
+        guess = f"{proof}{block_hash}"
         guess_hash = hash_256(guess, b58=False)
         return guess_hash[:4] == "0000", guess_hash
 
@@ -154,12 +162,16 @@ class BlockChain:
         out = {
             "script_type": script_type,
             "value": value,
-            "script_pubkey": build_script_pubkey(addr, script_type)
+            "script_pubkey": build_script_pubkey(addr, script_type),
         }
         return out
 
-    def new_transaction(self, txid_in_list: list[tuple[str, int, ...]], out_list: list[tuple[str, float, str]],
-                        nlock_time=None):
+    def new_transaction(
+        self,
+        txid_in_list: list[tuple[str, int, ...]],
+        out_list: list[tuple[str, float, str]],
+        nlock_time=None,
+    ):
 
         """
         创建一个新的交易，添加到我创建的下一个区块中
@@ -234,7 +246,7 @@ class BlockChain:
         else:
             for vin in vin_list:
                 txid, out_idx = vin["txid"], vin["vout"]
-                if txid == '0':
+                if txid == "0":
                     continue
                 if txid not in self.UTXO:
                     raise ValueError(f"txid {txid} 无效")
@@ -244,10 +256,10 @@ class BlockChain:
                 # 验证解锁脚本
                 out_data = self.UTXO[txid][out_idx]
                 if not validate_script(
-                        out_data["script_pubkey"],
-                        out_data["script_type"],
-                        vin,
-                        vin.get("redeem_script")
+                    out_data["script_pubkey"],
+                    out_data["script_type"],
+                    vin,
+                    vin.get("redeem_script"),
                 ):
                     raise ValueError("script result False")
 
@@ -260,7 +272,7 @@ class BlockChain:
             if node == self.host:
                 continue
             try:
-                requests.post(f'http://{node}/trans/sync_trans', json=trans, timeout=5)
+                requests.post(f"http://{node}/trans/sync_trans", json=trans, timeout=5)
             except:
                 pass
 
@@ -273,7 +285,7 @@ class BlockChain:
         # UTXO 中删除 vin
         for vin in trans["vin"]:
             in_txid, out = vin["txid"], vin["vout"]
-            if in_txid != '0':
+            if in_txid != "0":
                 self.UTXO[in_txid].pop(out)
         # UTXO 中增加 vout
         for idx, vout in enumerate(trans["vout"]):
@@ -297,7 +309,9 @@ class BlockChain:
         while i < len(chain):
             prv_blocks, block = chain[i - 1], chain[i]
             # id 是连续的
-            if prv_blocks["index"] != block["previous_hash"] or not self.valid_proof(block["proof"], block):
+            if prv_blocks["index"] != block["previous_hash"] or not self.valid_proof(
+                block["proof"], block
+            ):
                 return False
             i += 1
         return True
@@ -316,11 +330,11 @@ class BlockChain:
                 continue
             # 访问节点的一个接口，拿到该接口的区块链长度和区块链本身
             try:
-                response = requests.get(f'http://{node}/chain')
+                response = requests.get(f"http://{node}/chain")
                 if response.status_code == 200:
                     resp_dict = response.json()
-                    length = resp_dict['length']
-                    chain = resp_dict['chain']
+                    length = resp_dict["length"]
+                    chain = resp_dict["chain"]
 
                     # 判断邻居节点发送过来的区块链长度是否最长且是否合法
                     if length > local_len and self.valid_chain(chain):
@@ -374,7 +388,7 @@ class BlockChain:
 
     def reload_by_file(self):
         if Path(self.file_name).exists():
-            with open(self.file_name, 'r') as f:
+            with open(self.file_name, "r") as f:
                 for row in f.readlines():
                     block = json.loads(row)
                     self.chain.append(block)
@@ -389,10 +403,10 @@ class BlockChain:
         if host == self.full_node:
             return
         try:
-            data = {
-                "nodes": list(self.nodes)
-            }
-            response = requests.post(f'http://{self.full_node}/nodes/register', json=data, timeout=5)
+            data = {"nodes": list(self.nodes)}
+            response = requests.post(
+                f"http://{self.full_node}/nodes/register", json=data, timeout=5
+            )
             if response.status_code == 200:
                 resp_dict = response.json()
                 total_nodes = resp_dict["total_nodes"]

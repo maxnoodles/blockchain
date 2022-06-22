@@ -1,11 +1,19 @@
 from unittest import TestCase
 
-from utils import generate_ecdsa_keys, sign_data, validate_signature, build_simple_vin, build_sig, build_script_pubkey, \
-    validate_script, hash_256, build_multi_script
+from utils import (
+    generate_ecdsa_keys,
+    sign_data,
+    validate_signature,
+    build_simple_vin,
+    build_sig,
+    build_script_pubkey,
+    validate_script,
+    hash_256,
+    build_multi_script,
+)
 
 
 class UtilTest(TestCase):
-
     def setUp(self):
         self.pk, self.sk = generate_ecdsa_keys(write_file=False)
 

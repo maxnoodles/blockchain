@@ -10,8 +10,8 @@ from pathlib import Path
 import ecdsa
 
 CURVE = ecdsa.SECP256k1
-NODE_ADDRESS_PATH = 'files/host_address.txt'
-KEY_PATH = 'files/key.txt'
+NODE_ADDRESS_PATH = "files/host_address.txt"
+KEY_PATH = "files/key.txt"
 
 
 def validate_script(lock_script, script_type, in_data):
@@ -20,10 +20,10 @@ def validate_script(lock_script, script_type, in_data):
     match script_type:
         case "P2SH":
             """
-               两个脚本经由两步实现组合。 首先，将 unlock_script 与 lock_script 比对以确认其与哈希是否匹配
-               <2 PK1 PK2 PK3 3 OP_CHECKMULTISIG> HASH <redeem scriptHash> OP_EQUALVERIFY
-               假如兑换脚本哈希匹配，解锁脚本自行执行以解锁兑换脚本
-               <Sig1> <Sig2> 2 PK1 PK2 PK3 3 OP_CHECKMULTISIG
+            两个脚本经由两步实现组合。 首先，将 unlock_script 与 lock_script 比对以确认其与哈希是否匹配
+            <2 PK1 PK2 PK3 3 OP_CHECKMULTISIG> HASH <redeem scriptHash> OP_EQUALVERIFY
+            假如兑换脚本哈希匹配，解锁脚本自行执行以解锁兑换脚本
+            <Sig1> <Sig2> 2 PK1 PK2 PK3 3 OP_CHECKMULTISIG
             """
             lock_script = lock_script.lstrip("OP_HASH")
             redeem_hash = hash_256(tmp_data["redeem_script"])
@@ -100,15 +100,12 @@ def hash_256(s, b58=True):
 
 
 def build_sig(data, sk_list, pk_str):
-    sig_str = ' '.join((sign_data(sk, data) for sk in sk_list))
-    return ' '.join([sig_str, pk_str])
+    sig_str = " ".join((sign_data(sk, data) for sk in sk_list))
+    return " ".join([sig_str, pk_str])
 
 
 def build_simple_vin(txid, vout):
-    return {
-        "txid": txid,
-        "vout": vout
-    }
+    return {"txid": txid, "vout": vout}
 
 
 def sign_data(secret_key: str, data: dict):
@@ -150,7 +147,7 @@ def generate_ecdsa_keys(write_file=True):
     sk = base58.b58encode(_sk.to_string()).decode()
     if write_file:
         with open(KEY_PATH, "a") as f:
-            f.write(json.dumps({hash_256(pk): (pk, sk)})+"\n")
+            f.write(json.dumps({hash_256(pk): (pk, sk)}) + "\n")
     return pk, sk
 
 
@@ -162,7 +159,7 @@ def check_address_in_script(pk, script):
 
 def get_host_address(host):
     if not host:
-        return hash_256(generate_ecdsa_keys()[0])
+        return hash_256(generate_ecdsa_keys(write_file=False)[0])
     p = Path(NODE_ADDRESS_PATH)
     addr_map = {}
     if not p.exists():
