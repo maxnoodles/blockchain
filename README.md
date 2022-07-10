@@ -1,12 +1,12 @@
 # blockchain
 
-### Requirements
+## Requirements
 Python 3.10+
 
 如果将代码中 match-case 替换成 if-else 则 Python 3.6+ 即可
 
 
-### introduction
+## introduction
 **myblockchain.py** 区块链的主要的代码文件
 
 **app.py** 为区块链提供 web 服务
