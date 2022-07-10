@@ -52,7 +52,8 @@ class TestMerkleTools(TestCase):
         proof = [{'right': '3b64db95cb55c763391c707108489ae18b4112d783300de38e033b4c98c3deaf'},
                  {'right': '355b1bbfc96725cdce8f4a2708fda310a80e6d13315aec4e5eed2a75fe8032ce'}]
 
-        proof_0 = self.mt.get_proof(0)
+        self.proof = self.mt.get_proof(0)
+        proof_0 = self.proof
         self.assertEqual(proof_0, proof)
 
         leaf_0 = self.mt.get_leaf(0)
