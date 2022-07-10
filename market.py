@@ -1,6 +1,7 @@
 import hashlib
 import binascii
 import sys
+from collections.abc import Iterable
 
 
 class MerkleTools(object):
@@ -42,6 +43,9 @@ class MerkleTools(object):
     def get_tree_ready_state(self):
         return self.is_ready
 
+    def _calc(self, l, r):
+        return self.hash_function(l + r).digest()
+
     def _calculate_next_level(self):
         solo_leave = None
         N = len(self.levels[0])  # number of leaves on the level
@@ -51,19 +55,15 @@ class MerkleTools(object):
 
         new_level = []
         for l, r in zip(self.levels[0][0:N:2], self.levels[0][1:N:2]):
-            new_level.append(self.hash_function(l + r).digest())
+            new_level.append(self._calc(l, r))
         if solo_leave is not None:
             new_level.append(solo_leave)
-        self.levels = [
-            new_level,
-        ] + self.levels  # prepend new level
+        self.levels = [new_level] + self.levels  # prepend new level
 
     def make_tree(self):
         self.is_ready = False
         if self.get_leaf_count() > 0:
-            self.levels = [
-                self.leaves,
-            ]
+            self.levels = [self.leaves]
             while len(self.levels[0]) > 1:
                 self._calculate_next_level()
         self.is_ready = True

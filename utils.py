@@ -1,4 +1,5 @@
 from pprint import pprint
+from typing import Union
 
 import base58
 import hashlib
@@ -59,7 +60,7 @@ def eval_script(script, data):
                 # <sig> <pubk> OP_CHECKSIG
                 pubk = stack.pop()
                 sig = stack.pop()
-                if not validate_signature(pubk, sig, data):
+                if not validate_sig_data(pubk, sig, data):
                     return False
             case "OP_CHECKMULTISIG":
                 # 检测多重签名
@@ -80,7 +81,7 @@ def validate_multi_sign(pk_lists, sig_lists, out_data):
     success_count = 0
     for sig in sig_lists:
         for pk in pk_lists:
-            if validate_signature(pk, sig, out_data):
+            if validate_sig_data(pk, sig, out_data):
                 success_count += 1
     if success_count == len(sig_lists):
         return True
@@ -108,7 +109,7 @@ def build_simple_vin(txid, vout):
     return {"txid": txid, "vout": vout}
 
 
-def sign_data(secret_key: str, data: dict):
+def sign_data(secret_key: str, data: Union[dict, str]):
     sig_byte = build_to_sig_byte(data)
     signature = sign_byte(secret_key, sig_byte)
     return signature
@@ -121,16 +122,22 @@ def sign_byte(secret_key, sig_byte):
     return signature
 
 
-def validate_signature(public_key, signature, data):
+def validate_sig_data(public_key, signature, data):
     to_sig_byte = build_to_sig_byte(data)
-    return validate_ecdsa_sign(public_key, signature, to_sig_byte)
+    return validate_sig_byte(public_key, signature, to_sig_byte)
 
 
-def build_to_sig_byte(data):
-    return json.dumps(data, sort_keys=True).encode()
+def build_to_sig_byte(data: Union[dict, str]):
+    match data:
+        case dict() | list():
+            return json.dumps(data, sort_keys=True).encode()
+        case str():
+            return data.encode()
+        case _:
+            raise ValueError(f"{data} 类型错误")
 
 
-def validate_ecdsa_sign(public_key: str, sign: str, to_sig_byte: bytes):
+def validate_sig_byte(public_key: str, sign: str, to_sig_byte: bytes):
     public_key = base58.b58decode(public_key.encode())
     signature = base58.b58decode(sign.encode())
     vk = ecdsa.VerifyingKey.from_string(public_key, curve=ecdsa.SECP256k1)

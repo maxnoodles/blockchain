@@ -259,7 +259,6 @@ class BlockChain:
                     out_data["script_pubkey"],
                     out_data["script_type"],
                     vin,
-                    vin.get("redeem_script"),
                 ):
                     raise ValueError("script result False")
 
@@ -340,6 +339,7 @@ class BlockChain:
                     if length > local_len and self.valid_chain(chain):
                         print(f"使用长度更长 {length} 的区块链 {chain}")
                         # 使用邻居节点的区块链
+                        # todo 替换 utxo 集合
                         local_len = length
                         new_chain = chain
             except:
