@@ -126,8 +126,9 @@ to_bob = new_transaction(to_alice["txid"], "bob", 50)
 
 ```python
 import base58
-from ecdsa import ecdsa
+import ecdsa
 
+CURVE = ecdsa.SECP256k1
 # 生成公钥和私钥
 def generate_ecdsa_keys():
     # https://github.com/tlsfuzzer/python-ecdsa
@@ -150,7 +151,7 @@ a_pk, a_sk = generate_ecdsa_keys()
 #a_sk = '7Wtwfzt5kyz6AqKorXqPNc9ifaLzVCAWZf5o4h2jpcSK'
 
 
-b_pk, p_sk = generate_ecdsa_keys()
+b_pk, b_sk = generate_ecdsa_keys()
 #b_pk = 'TPzyg9rDVMwvfHvmm5jThTZFLv1LAMQy8BPMVneSVVKRgne18G54vB6QKH2C8V8doCJP5KRhukGks82kYHLF7FK'
 #b_sk = 'H2RtiRNZYKw8tH1kKu1Z4iHNn9wwX2KHBWGE54sJcGnT'
 
@@ -465,7 +466,8 @@ def adjust_UTXO(trans):
     for vin in trans["vin"]:
         in_txid, out = vin["txid"], vin["vout"]
         if in_txid != "0":   # 创币交易引用的 txid 是 "0"，无中生有的交易，不可能在 utxo 中
-            UTXO[in_txid].pop(out)
+            if not UTXO[in_txid]:
+                UTXO.pop(in_txid)
     # UTXO 中增加 vout
     for idx, vout in enumerate(trans["vout"]):
         UTXO[txid][idx] = vout

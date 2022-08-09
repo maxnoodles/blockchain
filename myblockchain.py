@@ -347,7 +347,7 @@ class BlockChain:
             # 调整 utxo
             for block in self.chain:
                 for trans in block["transactions"]:
-                    self.UTXO = defaultdict()
+                    self.UTXO = defaultdict(dict)
                     self.adjust_UTXO(trans)
             return True
         return False
