@@ -116,9 +116,9 @@ def sign_data(secret_key: str, data: Union[dict, str]):
 
 
 def sign_byte(secret_key, sig_byte):
-    sk = base58.b58decode(secret_key.encode())
-    _sk = ecdsa.SigningKey.from_string(sk, curve=CURVE)
-    signature = base58.b58encode(_sk.sign(sig_byte)).decode()
+    _sk = base58.b58decode(secret_key.encode())
+    sk = ecdsa.SigningKey.from_string(_sk, curve=CURVE)
+    signature = base58.b58encode(sk.sign(sig_byte)).decode()
     return signature
 
 
@@ -148,6 +148,7 @@ def validate_sig_byte(public_key: str, sign: str, to_sig_byte: bytes):
 
 
 def generate_ecdsa_keys(write_file=True):
+    # https://github.com/tlsfuzzer/python-ecdsa
     _sk = ecdsa.SigningKey.generate(curve=CURVE)  # this is your sign (private key)
     vk = _sk.get_verifying_key()  # this is your verification key (public key)
     pk = base58.b58encode(vk.to_string()).decode()

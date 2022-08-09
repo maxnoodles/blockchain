@@ -30,6 +30,11 @@ def get_utxo():
     )
 
 
+@app.route("/utxo", methods=["GET"])
+def get_all_utxo():
+    return jsonify(blockchain.UTXO), 200
+
+
 @app.route("/addr/<address>", methods=["GET"])
 def address_info(address):
 

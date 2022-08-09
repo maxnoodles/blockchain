@@ -90,18 +90,14 @@ class BlockChain:
         :param block: 区块
         :return:
         """
-        block_cp = copy.deepcopy(block)
-
         # 工作量证明--->穷举法计算出特殊的数
-        block_hash = self.hash(block_cp)
+        block_hash = self.hash(block)
         proof = 0
         while True:
             ret, hash_val = self.valid_proof(proof, block_hash)
             if ret:
-                break
+                return proof, hash_val
             proof += 1
-
-        return proof, hash_val
 
     @staticmethod
     def hash(block):
@@ -118,7 +114,7 @@ class BlockChain:
     def valid_proof(proof, block_hash) -> (bool, str):
         """
         验证工作量证明，计算出的hash是否正确
-        对上一个区块的proof和hash与当期区块的proof最sha256运算、
+        对上一个区块的proof和hash与当期区块的proof做sha256运算、
         :param proof: 当前区块的随机数（工作量）
         :param block_hash: 本区块的 hash
         """
@@ -135,7 +131,7 @@ class BlockChain:
         """
         构建一个交易输入
         :param txid: 引用的交易id
-        :param vout: 应用交易的第几个输出
+        :param vout: 引用交易的第几个输出
         :param sig: 签名
         :param redeem_script: 赎回脚本
         :return:
@@ -186,7 +182,7 @@ class BlockChain:
         # 小于 5 亿，解释成区块高度, 大于 5 亿为时间戳
         self.is_valid_nlock_time(nlock_time)
 
-        self.is_valid_trans(vin_list)
+        self.is_valid_vin_list(vin_list)
 
         # 矿工手续费
         fee = self.get_mine_fee(vin_list, vout_list)
@@ -239,28 +235,28 @@ class BlockChain:
             raise ValueError("输入费用小于输出费用")
         return fee
 
-    def is_valid_trans(self, vin_list):
+    def is_valid_vin_list(self, vin_list):
         if self.is_mine_trans(vin_list):
             # 创币交易，跳过
             return True
-        else:
-            for vin in vin_list:
-                txid, out_idx = vin["txid"], vin["vout"]
-                if txid == "0":
-                    continue
-                if txid not in self.UTXO:
-                    raise ValueError(f"txid {txid} 无效")
-                if out_idx not in self.UTXO[txid]:
-                    raise ValueError(f"txid {txid} 使用的 vout {out_idx} 无效")
 
-                # 验证解锁脚本
-                out_data = self.UTXO[txid][out_idx]
-                if not validate_script(
-                    out_data["script_pubkey"],
-                    out_data["script_type"],
-                    vin,
-                ):
-                    raise ValueError("script result False")
+        for vin in vin_list:
+            txid, out_idx = vin["txid"], vin["vout"]
+            if txid == "0":
+                continue
+            if txid not in self.UTXO:
+                raise ValueError(f"txid {txid} 无效")
+            if out_idx not in self.UTXO[txid]:
+                raise ValueError(f"txid {txid} 使用的 vout {out_idx} 无效")
+
+            # 验证解锁脚本
+            out_data = self.UTXO[txid][out_idx]
+            if not validate_script(
+                out_data["script_pubkey"],
+                out_data["script_type"],
+                vin,
+            ):
+                raise ValueError("script result False")
 
     def add_trans_and_utxo(self, trans):
         self.current_transactions.append(trans)
@@ -286,6 +282,8 @@ class BlockChain:
             in_txid, out = vin["txid"], vin["vout"]
             if in_txid != "0":
                 self.UTXO[in_txid].pop(out)
+                if not self.UTXO[in_txid]:
+                    self.UTXO.pop(in_txid)
         # UTXO 中增加 vout
         for idx, vout in enumerate(trans["vout"]):
             self.UTXO[txid][idx] = vout
@@ -338,8 +336,6 @@ class BlockChain:
                     # 判断邻居节点发送过来的区块链长度是否最长且是否合法
                     if length > local_len and self.valid_chain(chain):
                         print(f"使用长度更长 {length} 的区块链 {chain}")
-                        # 使用邻居节点的区块链
-                        # todo 替换 utxo 集合
                         local_len = length
                         new_chain = chain
             except:
@@ -348,6 +344,11 @@ class BlockChain:
                 pass
         if new_chain:
             self.chain = new_chain
+            # 调整 utxo
+            for block in self.chain:
+                for trans in block["transactions"]:
+                    self.UTXO = defaultdict()
+                    self.adjust_UTXO(trans)
             return True
         return False
 
